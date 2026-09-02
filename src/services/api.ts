@@ -68,34 +68,34 @@ export async function pushAllDataToRemote(payload: {
 
 // 單筆/批次費用異動同步至 PostgreSQL
 export async function syncSaveExpenseRemote(expense: ExpenseItem) {
-  try {
-    await fetch('/api/expenses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(expense)
-    });
-  } catch (err) {
-    console.warn('Sync save remote error:', err);
+  const res = await fetch('/api/expenses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(expense)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to save expense`);
   }
 }
 
 export async function syncDeleteExpenseRemote(id: string) {
-  try {
-    await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-  } catch (err) {
-    console.warn('Sync delete remote error:', err);
+  const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to delete expense`);
   }
 }
 
 export async function syncBatchDeleteExpensesRemote(ids: string[]) {
-  try {
-    await fetch('/api/expenses/batch-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids })
-    });
-  } catch (err) {
-    console.warn('Sync batch delete remote error:', err);
+  const res = await fetch('/api/expenses/batch-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to batch delete expenses`);
   }
 }
 
@@ -116,20 +116,20 @@ export async function syncUpdateExpenseStatusRemote(
     disbursedAt?: string;
   }
 ) {
-  try {
-    await fetch(`/api/expenses/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        status, 
-        rejectReason, 
-        approver, 
-        approvedAt,
-        ...extra
-      })
-    });
-  } catch (err) {
-    console.warn('Sync update status remote error:', err);
+  const res = await fetch(`/api/expenses/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      status, 
+      rejectReason: rejectReason || null, 
+      approver: approver || null, 
+      approvedAt: approvedAt || null,
+      ...extra
+    })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to update expense status`);
   }
 }
 
@@ -147,20 +147,20 @@ export async function syncBatchUpdateExpenseStatusRemote(
     disbursedAt?: string;
   }
 ) {
-  try {
-    await fetch('/api/expenses/batch-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        ids, 
-        status, 
-        approver, 
-        approvedAt,
-        ...extra
-      })
-    });
-  } catch (err) {
-    console.warn('Sync batch update status remote error:', err);
+  const res = await fetch('/api/expenses/batch-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      ids, 
+      status, 
+      approver: approver || null, 
+      approvedAt: approvedAt || null,
+      ...extra
+    })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to batch update status`);
   }
 }
 

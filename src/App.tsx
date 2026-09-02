@@ -78,7 +78,7 @@ export default function App() {
   });
   const lastMutationTimeRef = useRef<number>(0);
 
-  // 封裝安全儲存過場 (寫入雲端並提供 Loading 反饋，防止 Race Condition)
+  // 封裝安全儲存過場 (寫入雲端並提供 Loading 反饋，防止 Race Condition 與輪詢覆蓋)
   const triggerSaveWithFeedback = async (
     msg: string,
     action: () => Promise<void> | void
@@ -96,34 +96,32 @@ export default function App() {
       lastMutationTimeRef.current = Date.now();
       setSavingStatus({
         isSaving: false,
-        message: '資料已成功寫入雲端 PostgreSQL 並完成備份！',
+        message: '資料已成功寫入雲端 PostgreSQL 並鎖定最新狀態！',
         isSuccess: true,
         isError: false,
       });
       setTimeout(() => {
         setSavingStatus(prev => prev.isSuccess ? { ...prev, isSuccess: false } : prev);
-      }, 1800);
+      }, 2000);
     } catch (err) {
       console.error('Remote sync error:', err);
+      lastMutationTimeRef.current = Date.now();
       setSavingStatus({
         isSaving: false,
-        message: '已儲存至本機快取，連線恢復時將自動推送至雲端。',
+        message: '已安全暫存至本機快取，連線恢復時將自動推送至雲端。',
         isSuccess: false,
         isError: true,
       });
       setTimeout(() => {
         setSavingStatus(prev => prev.isError ? { ...prev, isError: false } : prev);
-      }, 2500);
+      }, 3000);
     }
   };
 
-  // 0.1 雲端資料庫初始化檢測與雙向同步 (Neon PostgreSQL)
+  // 0.1 雲端資料庫初始化檢測與雙向同步 (Neon PostgreSQL) - 具備 Mutation Guard 防抖保護
   const syncWithRemoteDb = async (silent = false) => {
-    // 若距離上次寫入小於 10 秒，或者目前正在儲存中，跳過背景輪詢，避免覆蓋使用者的最新輸入！
-    if (silent && Date.now() - lastMutationTimeRef.current < 10000) {
-      return;
-    }
-    if (savingStatus.isSaving) {
+    // 若距離上次寫入小於 25 秒（Mutation Guard 保護視窗），或目前正在寫入儲存中，跳過背景輪詢，防止覆蓋使用者的最新輸入與重新送審！
+    if (silent && (Date.now() - lastMutationTimeRef.current < 25000 || savingStatus.isSaving)) {
       return;
     }
 
@@ -134,8 +132,8 @@ export default function App() {
       if (health.dbConnected) {
         if (!silent) setIsSyncing(true);
         const res = await fetchRemoteData();
-        // 再次檢查是否在 fetch 期間剛好發生了寫入
-        if (Date.now() - lastMutationTimeRef.current < 10000 && silent) {
+        // 再次檢查是否在 fetch 等待期間剛好發生了寫入操作
+        if (silent && Date.now() - lastMutationTimeRef.current < 25000) {
           return;
         }
 
@@ -143,21 +141,27 @@ export default function App() {
           // 若後端資料庫已有資料，則載入同步
           if (res.data.expenses && res.data.expenses.length > 0) {
             setExpenses(res.data.expenses);
+            localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(res.data.expenses));
           }
           if (res.data.users && res.data.users.length > 0) {
             setUsers(res.data.users);
+            localStorage.setItem('EXPENSE_APP_USERS', JSON.stringify(res.data.users));
           }
           if (res.data.projects && res.data.projects.length > 0) {
             setProjects(res.data.projects);
+            localStorage.setItem('EXPENSE_APP_PROJECTS', JSON.stringify(res.data.projects));
           }
           if (res.data.categories && res.data.categories.length > 0) {
             setCategories(res.data.categories);
+            localStorage.setItem('EXPENSE_APP_CATEGORIES', JSON.stringify(res.data.categories));
           }
           if (res.data.companies && res.data.companies.length > 0) {
             setCompanies(res.data.companies);
+            localStorage.setItem('EXPENSE_APP_COMPANIES', JSON.stringify(res.data.companies));
           }
           if (res.data.auditLogs && res.data.auditLogs.length > 0) {
             setAuditLogs(res.data.auditLogs);
+            localStorage.setItem('EXPENSE_APP_AUDIT_LOGS', JSON.stringify(res.data.auditLogs));
           }
         }
       }
@@ -487,52 +491,52 @@ export default function App() {
 
     if (editingExpense) {
       // 編輯既有費用
-      let updatedItem: ExpenseItem | null = null;
-      setExpenses(prev => {
-        const nextList = prev.map(item => {
-          if (item.id === editingExpense.id) {
-            const isReSubmitting = item.status === 'rejected' || !!item.rejectedReason;
-            const numAmount = Number(expenseData.amount !== undefined ? expenseData.amount : item.amount);
-            const numFee = Number(expenseData.fee !== undefined ? expenseData.fee : item.fee || 0);
-            const totalAmount = Number(expenseData.totalAmount || (numAmount + numFee));
+      const isReSubmitting = editingExpense.status === 'rejected' || !!editingExpense.rejectedReason;
+      const numAmount = Number(expenseData.amount !== undefined ? expenseData.amount : editingExpense.amount);
+      const numFee = Number(expenseData.fee !== undefined ? expenseData.fee : editingExpense.fee || 0);
+      const totalAmount = Number(expenseData.totalAmount || (numAmount + numFee));
 
-            updatedItem = {
-              ...item,
-              ...expenseData,
-              amount: numAmount,
-              fee: numFee,
-              totalAmount: totalAmount,
-              applicantDepartment: applicantDept,
-              // 駁回後的編輯公務費用報銷單，儲存後清掉駁回原因自動改為重新送審(待審核)
-              status: isReSubmitting ? 'submitted' : (expenseData.status || item.status),
-              approver: isReSubmitting ? undefined : item.approver,
-              approvedAt: isReSubmitting ? undefined : item.approvedAt,
-              rejectedReason: isReSubmitting ? undefined : item.rejectedReason,
-              rejectedBy: isReSubmitting ? undefined : item.rejectedBy,
-              rejectedAt: isReSubmitting ? undefined : item.rejectedAt,
-              deptApprover: isReSubmitting ? undefined : item.deptApprover,
-              deptApprovedAt: isReSubmitting ? undefined : item.deptApprovedAt,
-              adminApprover: isReSubmitting ? undefined : item.adminApprover,
-              adminApprovedAt: isReSubmitting ? undefined : item.adminApprovedAt,
-              disbursedBy: isReSubmitting ? undefined : item.disbursedBy,
-              disbursedAt: isReSubmitting ? undefined : item.disbursedAt,
-              updatedAt: new Date().toISOString(),
-            } as ExpenseItem;
-            return updatedItem;
-          }
-          return item;
-        });
+      const updatedItem: ExpenseItem = {
+        ...editingExpense,
+        ...expenseData,
+        amount: numAmount,
+        fee: numFee,
+        totalAmount: totalAmount,
+        applicantDepartment: applicantDept,
+        // 駁回後的編輯公務費用報銷單，儲存後清空駁回原因與簽核記錄，自動轉為重新送審(待審核)
+        status: isReSubmitting ? 'submitted' : (expenseData.status || editingExpense.status),
+        approver: isReSubmitting ? undefined : editingExpense.approver,
+        approvedAt: isReSubmitting ? undefined : editingExpense.approvedAt,
+        rejectedReason: isReSubmitting ? undefined : editingExpense.rejectedReason,
+        rejectedBy: isReSubmitting ? undefined : editingExpense.rejectedBy,
+        rejectedAt: isReSubmitting ? undefined : editingExpense.rejectedAt,
+        deptApprover: isReSubmitting ? undefined : editingExpense.deptApprover,
+        deptApprovedAt: isReSubmitting ? undefined : editingExpense.deptApprovedAt,
+        adminApprover: isReSubmitting ? undefined : editingExpense.adminApprover,
+        adminApprovedAt: isReSubmitting ? undefined : editingExpense.adminApprovedAt,
+        disbursedBy: isReSubmitting ? undefined : editingExpense.disbursedBy,
+        disbursedAt: isReSubmitting ? undefined : editingExpense.disbursedAt,
+        updatedAt: new Date().toISOString(),
+      };
+
+      setExpenses(prev => {
+        const nextList = prev.map(item => item.id === editingExpense.id ? updatedItem : item);
         localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
         return nextList;
       });
 
-      if (updatedItem) {
-        const itemToSave = updatedItem;
-        await triggerSaveWithFeedback('正在同步更新費用單據至雲端資料庫...', async () => {
-          await syncSaveExpenseRemote(itemToSave);
-        });
+      await triggerSaveWithFeedback(
+        isReSubmitting ? '正在同步將重新送審單據寫入雲端資料庫...' : '正在同步更新費用單據至雲端資料庫...',
+        async () => {
+          await syncSaveExpenseRemote(updatedItem);
+        }
+      );
+
+      if (isReSubmitting) {
+        addAuditLog('費用登記', '重新送審', `駁回單據 ID: ${editingExpense.id} 經申請人修改後已重新送審（重置為待部門審核）`);
+      } else {
+        addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，合計金額變更為 NT$ ${updatedItem.totalAmount.toLocaleString()}`);
       }
-      addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，合計金額變更為 NT$ ${expenseData.totalAmount || expenseData.amount}`);
     } else {
       // 新增費用
       const numAmount = Number(expenseData.amount || 0);
@@ -564,7 +568,11 @@ export default function App() {
         remark: expenseData.remark,
         createdAt: new Date().toISOString(),
       };
-      setExpenses(prev => [newItem, ...prev]);
+      setExpenses(prev => {
+        const nextList = [newItem, ...prev];
+        localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+        return nextList;
+      });
       await triggerSaveWithFeedback('正在新增費用單據至雲端資料庫...', async () => {
         await syncSaveExpenseRemote(newItem);
       });
@@ -613,19 +621,23 @@ export default function App() {
     const approverName = (newStatus === 'admin_approved' || newStatus === 'approved') ? currentUser.name : target.approver;
     const approvedAtTime = (newStatus === 'admin_approved' || newStatus === 'approved') ? today : target.approvedAt;
 
-    setExpenses(prev => prev.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          status: newStatus,
-          rejectedReason: newStatus === 'rejected' ? rejectReason : (newStatus === 'submitted' ? undefined : item.rejectedReason),
-          approver: approverName,
-          approvedAt: approvedAtTime,
-          ...extraMeta,
-        };
-      }
-      return item;
-    }));
+    setExpenses(prev => {
+      const nextList = prev.map(item => {
+        if (item.id === id) {
+          return {
+            ...item,
+            status: newStatus,
+            rejectedReason: newStatus === 'rejected' ? rejectReason : (newStatus === 'submitted' ? undefined : item.rejectedReason),
+            approver: approverName,
+            approvedAt: approvedAtTime,
+            ...extraMeta,
+          };
+        }
+        return item;
+      });
+      localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+      return nextList;
+    });
 
     await triggerSaveWithFeedback('正在將審批簽核狀態寫入資料庫...', async () => {
       await syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime, extraMeta);
@@ -675,18 +687,22 @@ export default function App() {
     const approverName = (newStatus === 'admin_approved' || newStatus === 'approved') ? currentUser.name : undefined;
     const approvedAtTime = (newStatus === 'admin_approved' || newStatus === 'approved') ? today : undefined;
 
-    setExpenses(prev => prev.map(item => {
-      if (ids.includes(item.id)) {
-        return {
-          ...item,
-          status: newStatus,
-          approver: approverName || item.approver,
-          approvedAt: approvedAtTime || item.approvedAt,
-          ...extraMeta,
-        };
-      }
-      return item;
-    }));
+    setExpenses(prev => {
+      const nextList = prev.map(item => {
+        if (ids.includes(item.id)) {
+          return {
+            ...item,
+            status: newStatus,
+            approver: approverName || item.approver,
+            approvedAt: approvedAtTime || item.approvedAt,
+            ...extraMeta,
+          };
+        }
+        return item;
+      });
+      localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+      return nextList;
+    });
 
     await triggerSaveWithFeedback(`正在批次簽核 ${ids.length} 筆單據至資料庫...`, async () => {
       await syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime, extraMeta);

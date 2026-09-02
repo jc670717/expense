@@ -141,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-3 py-1.5 rounded-md text-xs font-medium shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>+ 填報費用</span>
+          <span>填報費用</span>
         </button>
 
         {/* 通知中心鈴鐺 */}

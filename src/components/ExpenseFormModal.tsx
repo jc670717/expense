@@ -11,7 +11,8 @@ import {
   Trash2,
   Calendar,
   Layers,
-  RotateCcw
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 import { Company, CurrencyRate, ExpenseCategory, ExpenseItem, Project, UserPosition, UserProfile } from '../types';
 import { formatMoney } from '../utils/exportUtils';
@@ -175,6 +176,45 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   const selectedCatObj = categories.find(c => c.name === categoryName);
   const userCatLimit = selectedCatObj?.roleLimits ? selectedCatObj.roleLimits[userPos] : null;
   const maxLimitForUser = userCatLimit?.maxLimit || selectedCatObj?.maxPerItem || 0;
+
+  // 當開啟彈窗或傳入的 editingExpense 改變時，重置/更新表單欄位狀態
+  useEffect(() => {
+    if (isOpen) {
+      if (editingExpense) {
+        setClaimMonth(editingExpense.claimMonth || monthOptions[0]?.value || '202609');
+        setDate(editingExpense.date || new Date().toISOString().split('T')[0]);
+        setApplicant(editingExpense.applicant || currentUser.name);
+        setCompanyName(editingExpense.companyName || companies[0]?.name || '邦捷總公司');
+        setProjectName(editingExpense.projectName || selectableProjects[0]?.name || '金廈(泉)票務系統暨服務採購案');
+        setDescription(editingExpense.description || '');
+        setCategoryName(editingExpense.categoryName || availableCategories[0]?.name || categories[0]?.name || '住宿／車資');
+        setCurrency(editingExpense.currency || 'TWD');
+        setForeignAmount(editingExpense.foreignAmount ? String(editingExpense.foreignAmount) : '');
+        setAmount(editingExpense.amount !== undefined ? String(editingExpense.amount) : '');
+        setFee(editingExpense.fee !== undefined ? String(editingExpense.fee) : '0');
+        setInvoiceNo(editingExpense.invoiceNo || '');
+        setReceiptStatus(editingExpense.receiptStatus || 'attached');
+        setRemark(editingExpense.remark || '');
+      } else {
+        setClaimMonth(monthOptions[0]?.value || '202609');
+        setDate(new Date().toISOString().split('T')[0]);
+        setApplicant(currentUser.name);
+        setCompanyName(companies[0]?.name || '邦捷總公司');
+        setProjectName(selectableProjects[0]?.name || '金廈(泉)票務系統暨服務採購案');
+        setDescription('');
+        setCategoryName(availableCategories[0]?.name || categories[0]?.name || '住宿／車資');
+        setCurrency('TWD');
+        setForeignAmount('');
+        setAmount('');
+        setFee('0');
+        setInvoiceNo('');
+        setReceiptStatus('attached');
+        setRemark('');
+      }
+      setIsConfirmingDelete(false);
+      setErrors({});
+    }
+  }, [isOpen, editingExpense]);
 
   // 當幣別或外幣金額改變時，自動換算台幣金額
   useEffect(() => {
