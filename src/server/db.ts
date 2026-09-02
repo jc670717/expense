@@ -2,16 +2,16 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import dotenv from 'dotenv';
 dotenv.config();
 
-// 連線字串 (支援 DATABASE_URL 或 POSTGRES_URL)
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-
 let pool: Pool | null = null;
+let currentConnStr: string | null = null;
 
 export function getDbPool(): Pool | null {
+  const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!connectionString) {
     return null;
   }
-  if (!pool) {
+  if (!pool || currentConnStr !== connectionString) {
+    currentConnStr = connectionString;
     pool = new Pool({ connectionString });
   }
   return pool;
