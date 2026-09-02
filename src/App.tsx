@@ -37,8 +37,98 @@ import {
   INITIAL_USERS 
 } from './data/initialData';
 import { INITIAL_EXPENSES } from './data/initialExpenses';
+import { 
+  checkDbHealth, 
+  fetchRemoteData, 
+  pushAllDataToRemote, 
+  syncSaveExpenseRemote, 
+  syncDeleteExpenseRemote, 
+  syncBatchDeleteExpensesRemote, 
+  syncUpdateExpenseStatusRemote, 
+  syncBatchUpdateExpenseStatusRemote 
+} from './services/api';
 
 export default function App() {
+  // 0. 雲端資料庫連線狀態 (Neon PostgreSQL)
+  const [dbStatus, setDbStatus] = useState<{ dbConnected: boolean; message?: string; driver?: string }>({
+    dbConnected: false
+  });
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // 0.1 雲端資料庫初始化檢測與雙向同步 (Neon PostgreSQL)
+  const syncWithRemoteDb = async (silent = false) => {
+    try {
+      const health = await checkDbHealth();
+      setDbStatus(health);
+
+      if (health.dbConnected) {
+        if (!silent) setIsSyncing(true);
+        const res = await fetchRemoteData();
+        if (res.dbConnected && res.data) {
+          // 若後端資料庫已有資料，則載入同步
+          if (res.data.expenses && res.data.expenses.length > 0) {
+            setExpenses(res.data.expenses);
+          }
+          if (res.data.users && res.data.users.length > 0) {
+            setUsers(res.data.users);
+          }
+          if (res.data.projects && res.data.projects.length > 0) {
+            setProjects(res.data.projects);
+          }
+          if (res.data.categories && res.data.categories.length > 0) {
+            setCategories(res.data.categories);
+          }
+          if (res.data.companies && res.data.companies.length > 0) {
+            setCompanies(res.data.companies);
+          }
+          if (res.data.auditLogs && res.data.auditLogs.length > 0) {
+            setAuditLogs(res.data.auditLogs);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Sync error:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    syncWithRemoteDb();
+    // 每 15 秒背景檢查一次雲端資料庫狀態與多人異動
+    const timer = setInterval(() => {
+      syncWithRemoteDb(true);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 手動推送全量資料至雲端資料庫
+  const handlePushAllToCloudDb = async () => {
+    setIsSyncing(true);
+    const success = await pushAllDataToRemote({
+      expenses,
+      users,
+      projects,
+      categories,
+      companies,
+      auditLogs
+    });
+    setIsSyncing(false);
+    if (success) {
+      addAuditLog('系統資料', '雲端同步', '已手動將所有單據、專案、科目資料推送至 Neon PostgreSQL 雲端資料庫');
+      await syncWithRemoteDb();
+      alert('已成功將本地所有報支單據與設定同步至 Neon PostgreSQL 資料庫！');
+    } else {
+      alert('同步失敗，請確認伺服器 DATABASE_URL 設定是否正確。');
+    }
+  };
+
+  const handlePullFromCloudDb = async () => {
+    setIsSyncing(true);
+    await syncWithRemoteDb(false);
+    setIsSyncing(false);
+  };
+
   // 1. 本地狀態與持久化
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_EXPENSES');
@@ -271,6 +361,7 @@ export default function App() {
     }
 
     setExpenses(prev => prev.filter(e => e.id !== id));
+    syncDeleteExpenseRemote(id);
     addAuditLog('費用登記', '刪除費用', `刪除【${target.applicant}】之報支單據：${target.description}（金額 NT$ ${target.amount.toLocaleString()}）`);
   };
 
@@ -278,23 +369,29 @@ export default function App() {
     if (ids.length === 0) return;
     const count = ids.length;
     setExpenses(prev => prev.filter(e => !ids.includes(e.id)));
+    syncBatchDeleteExpensesRemote(ids);
     addAuditLog('費用登記', '批次刪除', `批次刪除 ${count} 筆費用報支單據`);
   };
 
   const handleSaveExpense = (expenseData: Partial<ExpenseItem>) => {
     if (editingExpense) {
       // 編輯既有費用
+      let updatedItem: ExpenseItem | null = null;
       setExpenses(prev => prev.map(item => {
         if (item.id === editingExpense.id) {
-          return {
+          updatedItem = {
             ...item,
             ...expenseData,
             amount: Number(expenseData.amount || item.amount),
             updatedAt: new Date().toISOString(),
           } as ExpenseItem;
+          return updatedItem;
         }
         return item;
       }));
+      if (updatedItem) {
+        syncSaveExpenseRemote(updatedItem);
+      }
       addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，金額變更為 NT$ ${expenseData.amount}`);
     } else {
       // 新增費用
@@ -320,6 +417,7 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
       setExpenses(prev => [newItem, ...prev]);
+      syncSaveExpenseRemote(newItem);
       addAuditLog('費用登記', '新增費用', `申請人【${newItem.applicant}】新增費用單據：${newItem.description}（金額 NT$ ${newItem.amount}）`);
     }
     setIsExpenseModalOpen(false);
@@ -329,18 +427,23 @@ export default function App() {
     const target = expenses.find(e => e.id === id);
     if (!target) return;
 
+    const approverName = newStatus === 'approved' ? currentUser.name : target.approvedBy;
+    const approvedAtTime = newStatus === 'approved' ? new Date().toISOString().split('T')[0] : target.approvedAt;
+
     setExpenses(prev => prev.map(item => {
       if (item.id === id) {
         return {
           ...item,
           status: newStatus,
           rejectedReason: newStatus === 'rejected' ? rejectReason : undefined,
-          approvedBy: newStatus === 'approved' ? currentUser.name : item.approvedBy,
-          approvedAt: newStatus === 'approved' ? new Date().toISOString().split('T')[0] : item.approvedAt,
+          approvedBy: approverName,
+          approvedAt: approvedAtTime,
         };
       }
       return item;
     }));
+
+    syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime);
 
     const statusMap = {
       submitted: '待審核',
@@ -353,18 +456,22 @@ export default function App() {
   };
 
   const handleBatchStatusChange = (ids: string[], newStatus: ExpenseStatus) => {
+    const approverName = newStatus === 'approved' ? currentUser.name : undefined;
+    const approvedAtTime = newStatus === 'approved' ? new Date().toISOString().split('T')[0] : undefined;
+
     setExpenses(prev => prev.map(item => {
       if (ids.includes(item.id)) {
         return {
           ...item,
           status: newStatus,
-          approvedBy: newStatus === 'approved' ? currentUser.name : item.approvedBy,
-          approvedAt: newStatus === 'approved' ? new Date().toISOString().split('T')[0] : item.approvedAt,
+          approvedBy: approverName || item.approvedBy,
+          approvedAt: approvedAtTime || item.approvedAt,
         };
       }
       return item;
     }));
 
+    syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime);
     addAuditLog('審批中心', '批次簽核', `批次更新 ${ids.length} 筆單據狀態為「${newStatus}」`);
   };
 
@@ -746,6 +853,10 @@ export default function App() {
               onExportBackup={handleExportBackup}
               onRestoreBackup={handleRestoreBackup}
               onResetToInitial={handleResetToInitial}
+              dbStatus={dbStatus}
+              onSyncPushToDb={handlePushAllToCloudDb}
+              onSyncPullFromDb={handlePullFromCloudDb}
+              isSyncing={isSyncing}
             />
           )}
 

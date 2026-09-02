@@ -22,6 +22,10 @@ interface AuditBackupViewProps {
   onExportBackup: () => void;
   onRestoreBackup: (jsonData: any) => void;
   onResetToInitial: () => void;
+  dbStatus?: { dbConnected: boolean; message?: string; driver?: string };
+  onSyncPushToDb?: () => Promise<void>;
+  onSyncPullFromDb?: () => Promise<void>;
+  isSyncing?: boolean;
 }
 
 export const AuditBackupView: React.FC<AuditBackupViewProps> = ({
@@ -30,6 +34,10 @@ export const AuditBackupView: React.FC<AuditBackupViewProps> = ({
   onExportBackup,
   onRestoreBackup,
   onResetToInitial,
+  dbStatus = { dbConnected: false },
+  onSyncPushToDb,
+  onSyncPullFromDb,
+  isSyncing = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedModule, setSelectedModule] = useState<string>('ALL');
@@ -118,6 +126,64 @@ export const AuditBackupView: React.FC<AuditBackupViewProps> = ({
               className="hidden"
             />
           </label>
+        </div>
+      </div>
+
+      {/* 雲端資料庫 (Neon PostgreSQL) 多人共用連線狀態卡片 */}
+      <div className={`p-5 rounded-2xl border transition-all ${
+        dbStatus.dbConnected 
+          ? 'bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-emerald-500/40 text-white shadow-md' 
+          : 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border-slate-700 text-white shadow-md'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+              dbStatus.dbConnected ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-400/30' : 'bg-indigo-500/20 text-indigo-400 border border-indigo-400/30'
+            }`}>
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-white">Neon PostgreSQL 雲端多人即時資料庫</h3>
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                  dbStatus.dbConnected ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'
+                }`}>
+                  {dbStatus.dbConnected ? '● 已連線 (Multi-User Cloud Mode)' : '○ 離線展示模式 (Local Mode)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                {dbStatus.dbConnected 
+                  ? '系統已成功連線至 Neon PostgreSQL 雲端伺服器！所有同仁的報銷填報、審批、撥款與修改皆會即時同步至全體同仁裝置。' 
+                  : '目前運行於瀏覽器本地模式。部署至 Vercel 並於環境變數填入 DATABASE_URL (Neon PostgreSQL) 即可自動升級為多人即時協同系統。'}
+              </p>
+            </div>
+          </div>
+
+          {/* 雲端即時同步操作按鈕 */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {onSyncPushToDb && (
+              <button
+                onClick={onSyncPushToDb}
+                disabled={isSyncing}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                title="將當前資料寫入/初始化至 PostgreSQL 資料庫"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? '同步中...' : '推送資料至雲端 DB'}</span>
+              </button>
+            )}
+            {onSyncPullFromDb && (
+              <button
+                onClick={onSyncPullFromDb}
+                disabled={isSyncing}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                title="從 PostgreSQL 資料庫拉取最新全體同仁資料"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>從雲端 DB 重新整理</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
