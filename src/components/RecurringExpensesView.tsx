@@ -15,6 +15,7 @@ import { Company, CurrencyRate, ExpenseCategory, Project, RecurringExpenseTempla
 interface RecurringExpensesViewProps {
   templates: RecurringExpenseTemplate[];
   currentUser: UserProfile;
+  users?: UserProfile[];
   companies: Company[];
   projects: Project[];
   categories: ExpenseCategory[];
@@ -28,9 +29,11 @@ interface RecurringExpensesViewProps {
 export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
   templates = [],
   currentUser,
+  users = [],
   companies = [],
   projects = [],
   categories = [],
+  currencies = [],
   onSaveTemplate,
   onDeleteTemplate,
   onGenerateExpenses,
@@ -60,7 +63,7 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
   const [categoryName, setCategoryName] = useState(categories[0]?.name || '雜項購置');
   const [applicant, setApplicant] = useState(currentUser?.name || 'Hank');
   const [description, setDescription] = useState('');
-  const [defaultCurrency, setDefaultCurrency] = useState<'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR'>('TWD');
+  const [defaultCurrency, setDefaultCurrency] = useState<string>('TWD');
   const [defaultAmount, setDefaultAmount] = useState<number>(300);
   const [remark, setRemark] = useState('');
 
@@ -70,7 +73,7 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
     setCompanyName(companies[0]?.name || '邦捷總公司');
     setProjectName(projects[0]?.name || '邦捷公司費用報銷');
     setCategoryName(categories[0]?.name || '雜項購置');
-    setApplicant(currentUser?.name || 'Hank');
+    setApplicant(currentUser?.name || (users[0]?.name) || 'Hank');
     setDescription('');
     setDefaultCurrency('TWD');
     setDefaultAmount(300);
@@ -105,7 +108,7 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
       companyName,
       projectName,
       categoryName,
-      applicant,
+      applicant: applicant || currentUser?.name || 'Hank',
       description: description.trim(),
       defaultCurrency,
       defaultAmount: Number(defaultAmount) || 0,
@@ -287,19 +290,45 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
                     </div>
                   </div>
 
-                  {/* 金額快速 update 欄位 */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-xs">
-                    <span className="text-[11px] font-medium text-slate-600">本月金額：</span>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400 font-mono text-[11px]">{tmpl.defaultCurrency || 'TWD'}</span>
-                      <input
-                        type="number"
-                        value={currentAmount}
-                        onChange={(e) => handleAmountChange(tmpl.id, parseFloat(e.target.value) || 0)}
-                        className="w-24 px-2 py-1 rounded-lg border border-slate-300 bg-white font-bold text-right text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                  </div>
+                  {/* 金額快速 update 欄位與雙幣別換算顯示 */}
+                  {(() => {
+                    const isForeign = tmpl.defaultCurrency && tmpl.defaultCurrency !== 'TWD';
+                    const rateObj = currencies.find(c => c.currency === tmpl.defaultCurrency);
+                    const rate = rateObj?.rateToTWD || 1;
+                    const twdEquivalent = Math.round(currentAmount * rate);
+
+                    return (
+                      <div className="space-y-1.5 pt-1.5 border-t border-slate-200/60 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-slate-600">本月金額：</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-500 font-mono font-semibold text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">
+                              {tmpl.defaultCurrency || 'TWD'}
+                            </span>
+                            <input
+                              type="number"
+                              value={currentAmount}
+                              onChange={(e) => handleAmountChange(tmpl.id, parseFloat(e.target.value) || 0)}
+                              className="w-24 px-2 py-1 rounded-lg border border-slate-300 bg-white font-bold text-right text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 如果不是 TWD，並列顯示換算成 TWD 的金額 */}
+                        {isForeign && (
+                          <div className="flex items-center justify-between bg-amber-50/90 border border-amber-200/80 px-2.5 py-1.5 rounded-lg text-[11px]">
+                            <span className="text-amber-800 font-medium flex items-center gap-1">
+                              <span>折合台幣 (TWD)</span>
+                              <span className="text-[10px] text-amber-600 font-normal">(匯率 {rate})</span>
+                            </span>
+                            <span className="font-bold text-amber-900 font-mono">
+                              NT$ {twdEquivalent.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 </div>
               );
@@ -375,14 +404,23 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">申請人</label>
-                  <input
-                    type="text"
+                  <label className="block font-semibold text-slate-700 mb-1">申請人 (下拉選單)</label>
+                  <select
                     value={applicant}
                     onChange={(e) => setApplicant(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                     required
-                  />
+                  >
+                    {users && users.length > 0 ? (
+                      users.map(u => (
+                        <option key={u.id} value={u.name}>
+                          {u.name} {u.roleTitle ? `(${u.roleTitle})` : ''}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={currentUser?.name || 'Hank'}>{currentUser?.name || 'Hank'}</option>
+                    )}
+                  </select>
                 </div>
               </div>
 
@@ -403,14 +441,24 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">預設幣別</label>
                   <select
                     value={defaultCurrency}
-                    onChange={(e) => setDefaultCurrency(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none"
+                    onChange={(e) => setDefaultCurrency(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="TWD">TWD (新台幣)</option>
-                    <option value="USD">USD (美元)</option>
-                    <option value="JPY">JPY (日圓)</option>
-                    <option value="RMB">RMB (人民幣)</option>
-                    <option value="EUR">EUR (歐元)</option>
+                    {currencies && currencies.length > 0 ? (
+                      currencies.map(c => (
+                        <option key={c.currency} value={c.currency}>
+                          {c.currency} ({c.name})
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="TWD">TWD (新台幣)</option>
+                        <option value="USD">USD (美元)</option>
+                        <option value="JPY">JPY (日圓)</option>
+                        <option value="RMB">RMB (人民幣)</option>
+                        <option value="EUR">EUR (歐元)</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

@@ -61,13 +61,15 @@ export function createExpressApp() {
       // 先確保資料表存在
       await pool.query(SCHEMA_SQL);
 
-      const [expensesRes, usersRes, projectsRes, categoriesRes, companiesRes, logsRes] = await Promise.all([
+      const [expensesRes, usersRes, projectsRes, categoriesRes, companiesRes, logsRes, currenciesRes, recurringRes] = await Promise.all([
         pool.query('SELECT * FROM expenses ORDER BY date DESC, item_no ASC'),
         pool.query('SELECT * FROM users ORDER BY id ASC'),
         pool.query('SELECT * FROM projects ORDER BY code ASC'),
         pool.query('SELECT * FROM categories ORDER BY id ASC'),
         pool.query('SELECT * FROM companies ORDER BY id ASC'),
-        pool.query('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 500')
+        pool.query('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 500'),
+        pool.query('SELECT * FROM currency_rates ORDER BY currency ASC'),
+        pool.query('SELECT * FROM recurring_templates ORDER BY name ASC')
       ]);
 
       res.json({
@@ -157,6 +159,26 @@ export function createExpressApp() {
             targetType: l.target_type,
             targetId: l.target_id,
             details: l.details
+          })),
+          currencies: currenciesRes.rows.map(c => ({
+            currency: c.currency,
+            name: c.name,
+            rateToTWD: Number(c.rate_to_twd),
+            symbol: c.symbol || '$',
+            lastUpdated: c.last_updated
+          })),
+          recurringTemplates: recurringRes.rows.map(t => ({
+            id: t.id,
+            name: t.name,
+            companyName: t.company_name,
+            projectName: t.project_name,
+            categoryName: t.category_name,
+            applicant: t.applicant,
+            description: t.description,
+            defaultCurrency: t.default_currency || 'TWD',
+            defaultAmount: Number(t.default_amount),
+            remark: t.remark,
+            active: t.active
           }))
         }
       });
@@ -259,6 +281,36 @@ export function createExpressApp() {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO NOTHING`,
             [l.id, l.timestamp, l.userId, l.userName, l.userRole, l.action, l.module, l.targetType, l.targetId, l.details]
+          );
+        }
+      }
+
+      // 寫入 Currency Rates
+      const { currencies, recurringTemplates } = req.body;
+      if (Array.isArray(currencies) && currencies.length > 0) {
+        for (const c of currencies) {
+          await client.query(
+            `INSERT INTO currency_rates (currency, name, rate_to_twd, symbol, last_updated)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (currency) DO UPDATE SET
+               name = EXCLUDED.name, rate_to_twd = EXCLUDED.rate_to_twd, symbol = EXCLUDED.symbol, last_updated = EXCLUDED.last_updated`,
+            [c.currency, c.name, c.rateToTWD || 1.0, c.symbol || '$', c.lastUpdated || new Date().toISOString().split('T')[0]]
+          );
+        }
+      }
+
+      // 寫入 Recurring Expense Templates
+      if (Array.isArray(recurringTemplates) && recurringTemplates.length > 0) {
+        for (const t of recurringTemplates) {
+          await client.query(
+            `INSERT INTO recurring_templates (id, name, company_name, project_name, category_name, applicant, description, default_currency, default_amount, remark, active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO UPDATE SET
+               name = EXCLUDED.name, company_name = EXCLUDED.company_name, project_name = EXCLUDED.project_name,
+               category_name = EXCLUDED.category_name, applicant = EXCLUDED.applicant, description = EXCLUDED.description,
+               default_currency = EXCLUDED.default_currency, default_amount = EXCLUDED.default_amount,
+               remark = EXCLUDED.remark, active = EXCLUDED.active`,
+            [t.id, t.name, t.companyName, t.projectName, t.categoryName, t.applicant, t.description, t.defaultCurrency || 'TWD', t.defaultAmount || 0, t.remark || '', t.active !== false]
           );
         }
       }
@@ -512,6 +564,73 @@ export function createExpressApp() {
          ON CONFLICT (id) DO NOTHING`,
         [l.id, l.timestamp, l.userId, l.userName, l.userRole, l.action, l.module, l.targetType || null, l.targetId || null, l.details]
       );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 9. 匯率管理 API
+  app.post('/api/currencies', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const c = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO currency_rates (currency, name, rate_to_twd, symbol, last_updated)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (currency) DO UPDATE SET
+           name = EXCLUDED.name, rate_to_twd = EXCLUDED.rate_to_twd, symbol = EXCLUDED.symbol, last_updated = EXCLUDED.last_updated`,
+        [c.currency, c.name, c.rateToTWD || 1.0, c.symbol || '$', c.lastUpdated || new Date().toISOString().split('T')[0]]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/currencies/:currency', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM currency_rates WHERE currency = $1', [req.params.currency]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 10. 固定支出模版 API
+  app.post('/api/recurring-templates', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const t = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO recurring_templates (id, name, company_name, project_name, category_name, applicant, description, default_currency, default_amount, remark, active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, company_name = EXCLUDED.company_name, project_name = EXCLUDED.project_name,
+           category_name = EXCLUDED.category_name, applicant = EXCLUDED.applicant, description = EXCLUDED.description,
+           default_currency = EXCLUDED.default_currency, default_amount = EXCLUDED.default_amount,
+           remark = EXCLUDED.remark, active = EXCLUDED.active`,
+        [t.id, t.name, t.companyName, t.projectName, t.categoryName, t.applicant, t.description, t.defaultCurrency || 'TWD', t.defaultAmount || 0, t.remark || '', t.active !== false]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/recurring-templates/:id', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM recurring_templates WHERE id = $1', [req.params.id]);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

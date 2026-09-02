@@ -132,6 +132,32 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 7. 多幣別匯率表 (Currency Rates)
+CREATE TABLE IF NOT EXISTS currency_rates (
+    currency VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    rate_to_twd NUMERIC(15, 6) NOT NULL DEFAULT 1.0,
+    symbol VARCHAR(20) DEFAULT '$',
+    last_updated VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8. 每月固定支出模版表 (Recurring Expense Templates)
+CREATE TABLE IF NOT EXISTS recurring_templates (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    company_name VARCHAR(150),
+    project_name VARCHAR(150),
+    category_name VARCHAR(100),
+    applicant VARCHAR(100) NOT NULL,
+    description TEXT,
+    default_currency VARCHAR(20) DEFAULT 'TWD',
+    default_amount NUMERIC(15, 2) DEFAULT 0,
+    remark TEXT,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_expenses_applicant ON expenses(applicant);
 CREATE INDEX IF NOT EXISTS idx_expenses_claim_month ON expenses(claim_month);
 CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status);

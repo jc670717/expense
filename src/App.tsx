@@ -54,7 +54,12 @@ import {
   syncDeleteProjectRemote,
   syncSaveCompanyRemote,
   syncSaveCategoryRemote,
-  syncSaveAuditLogRemote
+  syncSaveAuditLogRemote,
+  syncSaveCurrencyRemote,
+  syncDeleteCurrencyRemote,
+  syncSaveRecurringTemplateRemote,
+  syncDeleteRecurringTemplateRemote,
+  fetchLiveExchangeRates
 } from './services/api';
 
 export default function App() {
@@ -857,9 +862,37 @@ export default function App() {
     );
   };
 
-  const handleSaveCurrency = (curr: CurrencyRate) => {
-    setCurrencies(prev => prev.map(c => c.currency === curr.currency ? curr : c));
+  const handleSaveCurrency = async (curr: CurrencyRate) => {
+    setCurrencies(prev => {
+      const exists = prev.some(c => c.currency === curr.currency);
+      return exists ? prev.map(c => c.currency === curr.currency ? curr : c) : [...prev, curr];
+    });
+    await triggerSaveWithFeedback(`正在將幣別【${curr.currency}】儲存至雲端資料庫...`, async () => {
+      await syncSaveCurrencyRemote(curr);
+    });
     addAuditLog('主檔維護', '更新匯率', `更新幣別【${curr.currency}】基準匯率為 ${curr.rateToTWD}`);
+  };
+
+  const handleDeleteCurrency = async (currencyCode: string) => {
+    if (currencyCode === 'TWD') {
+      alert('本位幣 TWD 不可刪除！');
+      return;
+    }
+    setCurrencies(prev => prev.filter(c => c.currency !== currencyCode));
+    await triggerSaveWithFeedback(`正在從雲端資料庫刪除幣別【${currencyCode}】...`, async () => {
+      await syncDeleteCurrencyRemote(currencyCode);
+    });
+    addAuditLog('主檔維護', '刪除幣別', `刪除外幣幣別【${currencyCode}】`);
+  };
+
+  const handleBatchUpdateCurrencies = async (updatedList: CurrencyRate[]) => {
+    setCurrencies(updatedList);
+    await triggerSaveWithFeedback('正在將最新外匯匯率同步儲存至雲端資料庫...', async () => {
+      for (const curr of updatedList) {
+        await syncSaveCurrencyRemote(curr);
+      }
+    });
+    addAuditLog('主檔維護', '批量更新匯率', `一鍵同步最新國際匯率共 ${updatedList.length} 種幣別`);
   };
 
   // 雲端備份與還原
@@ -1067,6 +1100,8 @@ export default function App() {
               companies={companies}
               projects={projects}
               categories={categories}
+              users={users}
+              currencies={currencies}
               onSaveTemplate={handleSaveRecurringTemplate}
               onDeleteTemplate={handleDeleteRecurringTemplate}
               onGenerateExpenses={handleGenerateRecurringExpenses}
@@ -1107,6 +1142,8 @@ export default function App() {
               onSaveUser={handleSaveUser}
               onDeleteUser={handleDeleteUser}
               onSaveCurrency={handleSaveCurrency}
+              onDeleteCurrency={handleDeleteCurrency}
+              onBatchUpdateCurrencies={handleBatchUpdateCurrencies}
             />
           )}
 

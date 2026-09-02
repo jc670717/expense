@@ -1,4 +1,14 @@
-import { ExpenseItem, UserProfile, Project, ExpenseCategory, Company, AuditLog, ExpenseStatus } from '../types';
+import { 
+  ExpenseItem, 
+  UserProfile, 
+  Project, 
+  ExpenseCategory, 
+  Company, 
+  AuditLog, 
+  ExpenseStatus,
+  CurrencyRate,
+  RecurringExpenseTemplate
+} from '../types';
 
 export interface SyncResponse {
   dbConnected: boolean;
@@ -235,6 +245,88 @@ export async function syncSaveAuditLogRemote(log: AuditLog): Promise<boolean> {
     return res.ok;
   } catch (err) {
     console.warn('Sync save audit log remote error:', err);
+    return false;
+  }
+}
+
+// 匯率操作與同步
+export async function syncSaveCurrencyRemote(currency: CurrencyRate): Promise<boolean> {
+  try {
+    const res = await fetch('/api/currencies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currency)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save currency remote error:', err);
+    return false;
+  }
+}
+
+export async function syncDeleteCurrencyRemote(currencyCode: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/currencies/${currencyCode}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync delete currency remote error:', err);
+    return false;
+  }
+}
+
+// 線上即時查詢外幣對 TWD 匯率 (使用 open exchange API)
+export async function fetchLiveExchangeRates(symbols?: string[]): Promise<Record<string, number>> {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!res.ok) throw new Error('匯率 API 請求失敗');
+    const data = await res.json();
+    if (data && data.rates && data.rates.TWD) {
+      const usdToTwd = data.rates.TWD;
+      const ratesToTWD: Record<string, number> = {
+        TWD: 1.0,
+      };
+      
+      // 對於任何幣別 X：1 X = (usdToTwd / data.rates[X]) TWD
+      Object.keys(data.rates).forEach(code => {
+        const ratePerUsd = data.rates[code];
+        if (ratePerUsd && ratePerUsd > 0) {
+          ratesToTWD[code.toUpperCase()] = Number((usdToTwd / ratePerUsd).toFixed(4));
+        }
+      });
+      // 特殊別名相容
+      if (ratesToTWD['CNY']) {
+        ratesToTWD['RMB'] = ratesToTWD['CNY'];
+      }
+      return ratesToTWD;
+    }
+    return {};
+  } catch (err) {
+    console.warn('Fetch live exchange rates error:', err);
+    return {};
+  }
+}
+
+// 固定支出模版操作與同步
+export async function syncSaveRecurringTemplateRemote(tmpl: RecurringExpenseTemplate): Promise<boolean> {
+  try {
+    const res = await fetch('/api/recurring-templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tmpl)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save recurring template remote error:', err);
+    return false;
+  }
+}
+
+export async function syncDeleteRecurringTemplateRemote(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/recurring-templates/${id}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync delete recurring template remote error:', err);
     return false;
   }
 }

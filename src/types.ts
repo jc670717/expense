@@ -105,7 +105,7 @@ export interface RecurringExpenseTemplate {
   categoryName: string;
   applicant: string;
   description: string;
-  defaultCurrency: 'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR';
+  defaultCurrency: string; // TWD, USD, JPY, RMB, EUR, or any custom currency code
   defaultAmount: number;
   remark?: string;
   active: boolean;
@@ -125,7 +125,7 @@ export interface AuditLog {
 }
 
 export interface CurrencyRate {
-  currency: 'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR';
+  currency: string; // TWD, USD, JPY, RMB, EUR, KRW, GBP, HKD, SGD, etc.
   name: string;
   rateToTWD: number;
   symbol: string;

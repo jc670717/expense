@@ -17,9 +17,13 @@ import {
   UserX,
   Sliders,
   DollarSign,
-  Info
+  Info,
+  RefreshCw,
+  Loader2,
+  Globe
 } from 'lucide-react';
 import { Company, CurrencyRate, ExpenseCategory, UserProfile, UserPosition, UserRole, UserStatus } from '../types';
+import { fetchLiveExchangeRates } from '../services/api';
 
 interface MasterDataViewProps {
   companies: Company[];
@@ -32,6 +36,8 @@ interface MasterDataViewProps {
   onSaveUser: (user: Partial<UserProfile>) => void;
   onDeleteUser?: (id: string) => void;
   onSaveCurrency: (currency: CurrencyRate) => void;
+  onDeleteCurrency?: (currencyCode: string) => void;
+  onBatchUpdateCurrencies?: (currencies: CurrencyRate[]) => void;
 }
 
 const ALL_SYSTEM_TABS = [
@@ -57,9 +63,125 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   onSaveUser,
   onDeleteUser,
   onSaveCurrency,
+  onDeleteCurrency,
+  onBatchUpdateCurrencies,
 }) => {
   const isSuperAdmin = currentUser?.position === 'admin' || currentUser?.role === 'admin';
   const [activeSubTab, setActiveSubTab] = useState<'companies' | 'categories' | 'users' | 'currencies'>('companies');
+
+  // 幣別新增與即時更新狀態
+  const [currModalOpen, setCurrModalOpen] = useState(false);
+  const [newCurrCode, setNewCurrCode] = useState('');
+  const [newCurrName, setNewCurrName] = useState('');
+  const [newCurrSymbol, setNewCurrSymbol] = useState('$');
+  const [newCurrRate, setNewCurrRate] = useState<number>(1);
+  const [isFetchingLiveRate, setIsFetchingLiveRate] = useState(false);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
+  const [rateFeedbackMsg, setRateFeedbackMsg] = useState<string | null>(null);
+
+  // 根據代碼自動上網查匯率
+  const handleAutoFetchSingleRate = async (code: string) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode || cleanCode.length < 3) return;
+
+    setIsFetchingLiveRate(true);
+    setRateFeedbackMsg(null);
+    try {
+      const rates = await fetchLiveExchangeRates();
+      const matched = rates[cleanCode];
+      if (matched && matched > 0) {
+        setNewCurrRate(matched);
+        setRateFeedbackMsg(`✅ 已聯網獲取 ${cleanCode} 最新匯率：1 ${cleanCode} ≈ NT$ ${matched}`);
+      } else {
+        setRateFeedbackMsg(`⚠️ 未能自外匯 API 查得 ${cleanCode}，請手動填寫匯率`);
+      }
+    } catch (err) {
+      setRateFeedbackMsg(`⚠️ 匯率連線逾時，請手動填寫匯率`);
+    } finally {
+      setIsFetchingLiveRate(false);
+    }
+  };
+
+  // 一鍵聯網更新所有外幣匯率
+  const handleRefreshAllRates = async () => {
+    setIsRefreshingAll(true);
+    try {
+      const liveRates = await fetchLiveExchangeRates();
+      let updatedCount = 0;
+      const updatedCurrencies = currencies.map(c => {
+        if (c.currency === 'TWD') return c;
+        const onlineRate = liveRates[c.currency.toUpperCase()];
+        if (onlineRate && onlineRate > 0) {
+          updatedCount++;
+          return {
+            ...c,
+            rateToTWD: onlineRate,
+            lastUpdated: new Date().toISOString().split('T')[0]
+          };
+        }
+        return c;
+      });
+
+      if (onBatchUpdateCurrencies) {
+        onBatchUpdateCurrencies(updatedCurrencies);
+      } else {
+        updatedCurrencies.forEach(c => onSaveCurrency(c));
+      }
+      alert(`🎉 匯率更新成功！已成功自國際外匯市場更新 ${updatedCount} 種幣別最新對台幣之匯率。`);
+    } catch (err) {
+      alert('更新匯率失敗，請檢查網路連線後再試。');
+    } finally {
+      setIsRefreshingAll(false);
+    }
+  };
+
+  // 新增幣別
+  const handleSaveNewCurrency = (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = newCurrCode.trim().toUpperCase();
+    if (!code) {
+      alert('請輸入幣別代碼');
+      return;
+    }
+    if (code === 'TWD') {
+      alert('TWD 為系統基準幣別，無需重複建立');
+      return;
+    }
+    const exists = currencies.some(c => c.currency.toUpperCase() === code);
+    if (exists) {
+      alert(`幣別【${code}】已存在列表中！`);
+      return;
+    }
+
+    const newCurr: CurrencyRate = {
+      currency: code,
+      name: newCurrName.trim() || `${code} 外幣`,
+      symbol: newCurrSymbol.trim() || '$',
+      rateToTWD: Number(newCurrRate) || 1,
+      lastUpdated: new Date().toISOString().split('T')[0]
+    };
+
+    onSaveCurrency(newCurr);
+    setCurrModalOpen(false);
+    setNewCurrCode('');
+    setNewCurrName('');
+    setNewCurrSymbol('$');
+    setNewCurrRate(1);
+    setRateFeedbackMsg(null);
+  };
+
+  // 刪除幣別
+  const handleDeleteCurrency = (code: string) => {
+    if (code === 'TWD') {
+      alert('【禁止操作】新台幣 (TWD) 為系統本位基準幣別，不可刪除！');
+      return;
+    }
+    if (confirm(`確定要刪除幣別【${code}】嗎？刪除後固定支出及報銷將無法直接引用此幣別。`)) {
+      if (onDeleteCurrency) {
+        onDeleteCurrency(code);
+      }
+    }
+  };
 
   // 公司編輯狀態
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
@@ -590,40 +712,256 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
       {/* 4. 即時匯率管理 */}
       {activeSubTab === 'currencies' && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-          <div>
-            <h3 className="font-bold text-base text-slate-900">多幣別即時換算匯率表</h3>
-            <p className="text-xs text-slate-500">
-              設定各外幣折合新台幣 (TWD) 之入帳匯率基準，填報時系統將自動即時換算台幣金額。
-            </p>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                <Globe className="w-5 h-5 text-indigo-600" />
+                多幣別即時換算匯率表
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                設定各外幣折合新台幣 (TWD) 之入帳匯率基準。支援手動設定、連網自動同步最新即時匯率，填報與固定支出時系統將自動即時換算台幣金額。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefreshAllRates}
+                disabled={isRefreshingAll}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                title="聯網自動抓取所有外幣對台幣之最新即時匯率"
+              >
+                {isRefreshingAll ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+                )}
+                {isRefreshingAll ? '正在更新中...' : '一鍵更新最新匯率'}
+              </button>
+
+              <button
+                onClick={() => {
+                  setNewCurrCode('');
+                  setNewCurrName('');
+                  setNewCurrSymbol('$');
+                  setNewCurrRate(1);
+                  setRateFeedbackMsg(null);
+                  setCurrModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                新增外幣幣別
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {currencies.map((curr) => (
-              <div key={curr.currency} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-slate-900">{curr.currency} ({curr.name})</span>
-                  <span className="text-xs font-mono text-slate-500">{curr.symbol}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {currencies.map((curr) => {
+              const isBaseCurrency = curr.currency === 'TWD';
+              return (
+                <div 
+                  key={curr.currency} 
+                  className={`p-4 rounded-xl border relative transition-all ${
+                    isBaseCurrency 
+                      ? 'border-indigo-200 bg-indigo-50/40' 
+                      : 'border-slate-200 bg-slate-50/80 hover:bg-white hover:border-slate-300 shadow-2xs'
+                  } space-y-2.5`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-slate-900">{curr.currency}</span>
+                        <span className="text-xs text-slate-600 font-medium">({curr.name})</span>
+                        {isBaseCurrency && (
+                          <span className="text-[10px] bg-indigo-600 text-white px-1.5 py-0.2 rounded font-bold">本位幣</span>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400">符號：{curr.symbol}</span>
+                    </div>
+
+                    {!isBaseCurrency && (
+                      <button
+                        onClick={() => handleDeleteCurrency(curr.currency)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                        title={`刪除 ${curr.currency} 幣別`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>對 TWD 基準匯率</span>
+                      {!isBaseCurrency && (
+                        <button
+                          onClick={async () => {
+                            const rates = await fetchLiveExchangeRates();
+                            const rate = rates[curr.currency.toUpperCase()];
+                            if (rate && rate > 0) {
+                              onSaveCurrency({
+                                ...curr,
+                                rateToTWD: rate,
+                                lastUpdated: new Date().toISOString().split('T')[0]
+                              });
+                            } else {
+                              alert(`未能自動取得 ${curr.currency} 匯率，請手動更新`);
+                            }
+                          }}
+                          className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          title="單獨線上重新整理此幣別匯率"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          更新
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 text-xs font-mono">1 {curr.currency} =</span>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={curr.rateToTWD}
+                        disabled={isBaseCurrency}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 1;
+                          onSaveCurrency({ ...curr, rateToTWD: val, lastUpdated: new Date().toISOString().split('T')[0] });
+                        }}
+                        className="flex-1 px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
+                      />
+                      <span className="text-slate-500 font-bold text-xs">NT$</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-200/50 flex items-center justify-between">
+                    <span>最後更新時間</span>
+                    <span className="font-mono">{curr.lastUpdated || '2026-09-01'}</span>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-600">
-                  <label className="block text-[11px] text-slate-400 mb-1">對 TWD 基準匯率</label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 新增外幣幣別彈窗 */}
+      {currModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 space-y-4 text-xs animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-indigo-600" />
+                新增外幣幣別與即時匯率
+              </h3>
+              <button
+                onClick={() => setCurrModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewCurrency} className="space-y-3.5">
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">
+                  幣別代碼 (例如：KRW, GBP, HKD, SGD, AUD, CAD)
+                </label>
+                <div className="flex gap-2">
                   <input
-                    type="number"
-                    step="0.001"
-                    value={curr.rateToTWD}
-                    disabled={curr.currency === 'TWD'}
+                    type="text"
+                    value={newCurrCode}
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 1;
-                      onSaveCurrency({ ...curr, rateToTWD: val, lastUpdated: new Date().toISOString().split('T')[0] });
+                      const code = e.target.value.toUpperCase();
+                      setNewCurrCode(code);
+                      if (code.length >= 3) {
+                        handleAutoFetchSingleRate(code);
+                      }
                     }}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    onBlur={() => {
+                      if (newCurrCode.trim().length >= 3) {
+                        handleAutoFetchSingleRate(newCurrCode);
+                      }
+                    }}
+                    placeholder="例如：KRW"
+                    maxLength={10}
+                    className="flex-1 px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAutoFetchSingleRate(newCurrCode)}
+                    disabled={isFetchingLiveRate || !newCurrCode.trim()}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    {isFetchingLiveRate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    查最新匯率
+                  </button>
+                </div>
+                {rateFeedbackMsg && (
+                  <p className="text-[11px] mt-1.5 text-slate-600 font-medium">
+                    {rateFeedbackMsg}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1 text-slate-700">幣別名稱</label>
+                  <input
+                    type="text"
+                    value={newCurrName}
+                    onChange={(e) => setNewCurrName(e.target.value)}
+                    placeholder="例如：韓元 / 英鎊"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
                   />
                 </div>
-                <div className="text-[10px] text-slate-400">
-                  最後更新：{curr.lastUpdated}
+                <div>
+                  <label className="block font-semibold mb-1 text-slate-700">幣別符號</label>
+                  <input
+                    type="text"
+                    value={newCurrSymbol}
+                    onChange={(e) => setNewCurrSymbol(e.target.value)}
+                    placeholder="例如：₩, £, HK$"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
                 </div>
               </div>
-            ))}
+
+              <div>
+                <label className="block font-semibold mb-1 text-slate-700">
+                  折合新台幣 (TWD) 匯率 (1 該幣別 = ? TWD)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={newCurrRate}
+                    onChange={(e) => setNewCurrRate(parseFloat(e.target.value) || 0)}
+                    placeholder="例如：0.024"
+                    className="flex-1 px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                  <span className="font-bold text-slate-600">NT$</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setCurrModalOpen(false)}
+                  className="px-3.5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm cursor-pointer"
+                >
+                  儲存並建立幣別
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
