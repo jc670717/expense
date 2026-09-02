@@ -88,7 +88,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       const year = d.getFullYear();
       const monthNum = String(d.getMonth() + 1).padStart(2, '0');
       const val = `${year}${monthNum}`;
-      const label = `${year}/${monthNum} (${year}年${monthNum}月)${i === 0 ? ' [當月]' : ''}`;
+      const label = `${year}/${monthNum}${i === 0 ? ' [當月]' : ''}`;
       list.push({ value: val, label });
     }
 
@@ -102,6 +102,16 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
     return list;
   }, [isPrivileged, editingExpense]);
+
+  // Requirement 7: 只要一但簽核過，不管哪一階段，就不能再修改刪除，除非是駁回，最高管理無此限制
+  const isSuperAdmin = currentUser.role === 'admin' || currentUser.position === 'admin';
+  const isSignedOff = !!editingExpense && (
+    editingExpense.status === 'dept_approved' || 
+    editingExpense.status === 'admin_approved' || 
+    editingExpense.status === 'approved' || 
+    editingExpense.status === 'paid'
+  );
+  const isLockedFromEditing = !isSuperAdmin && isSignedOff;
 
   // 表單狀態
   // Requirement 2: 點選新增費用報支時，管理者/主管預設為登入者本人 (currentUser.name)
@@ -311,6 +321,17 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             </div>
           )}
 
+          {/* 鎖定提示：若已簽核且非最高管理，唯讀不可修改刪除 */}
+          {isLockedFromEditing && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-2.5 text-xs text-amber-900">
+              <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold">此單據已進入或通過簽核流程（單據已鎖定為唯讀狀態）</span>
+                <p className="text-amber-700 text-[11px] mt-0.5">除最高管理者外，已簽核之費用不可修改或刪除。若需變更，請由主管駁回後重新編輯送審。</p>
+              </div>
+            </div>
+          )}
+
           {/* 專案預算即時警示條 (若超支或接近門檻) */}
           {selectedProject && (
             <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${
@@ -346,7 +367,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             {/* Requirement 3: 請款月份改為下拉 */}
             <div>
               <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                <span>請款月份 (年/月)</span>
+                <span>請款月份</span>
                 <span className="text-[10px] text-slate-400 font-normal">
                   {isPrivileged ? '開放前12個月' : '開放前2個月'}
                 </span>
@@ -354,9 +375,10 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               <select
                 value={claimMonth}
                 onChange={(e) => setClaimMonth(e.target.value)}
+                disabled={isLockedFromEditing}
                 className={`w-full px-3 py-2 rounded-lg border font-mono font-bold text-slate-800 bg-white ${
                   errors.claimMonth ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                } outline-none focus:ring-2 focus:ring-indigo-500`}
+                } outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed`}
               >
                 {monthOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>
@@ -373,9 +395,10 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                disabled={isLockedFromEditing}
                 className={`w-full px-3 py-2 rounded-lg border font-mono ${
                   errors.date ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                } outline-none focus:ring-2 focus:ring-indigo-500 bg-white`}
+                } outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-slate-100 disabled:cursor-not-allowed`}
                 required
               />
               {errors.date && <p className="text-rose-500 text-[10px] mt-1">{errors.date}</p>}
@@ -389,7 +412,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   預設為登入者
                 </span>
               </label>
-              {isPrivileged ? (
+              {isPrivileged && !isLockedFromEditing ? (
                 <select
                   value={applicant}
                   onChange={(e) => setApplicant(e.target.value)}
@@ -503,7 +526,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           </div>
 
           {/* 第五列：Requirement 4 多幣別折算 + 費用金額 + 手續費 + 合計金額 */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
                 <Calculator className="w-4 h-4 text-indigo-600" />
@@ -512,18 +535,19 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               <span className="text-[11px] text-slate-500">合計金額 = 費用金額 + 手續費</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className={currency !== 'TWD' ? 'grid grid-cols-2 sm:grid-cols-5 gap-2.5' : 'grid grid-cols-2 sm:grid-cols-4 gap-2.5'}>
               {/* 幣別 */}
-              <div className="sm:col-span-3">
+              <div>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">交易幣別</label>
                 <select
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  disabled={isLockedFromEditing}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed text-xs sm:text-sm"
                 >
                   {currencies.map(c => (
                     <option key={c.currency} value={c.currency}>
-                      {c.currency} ({c.name} 匯率:{c.rateToTWD})
+                      {c.currency}
                     </option>
                   ))}
                 </select>
@@ -531,8 +555,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
               {/* 外幣原金額 */}
               {currency !== 'TWD' ? (
-                <div className="sm:col-span-3">
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1 truncate">
                     原幣金額 ({currency})
                   </label>
                   <input
@@ -540,33 +564,35 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                     step="0.01"
                     value={foreignAmount}
                     onChange={(e) => setForeignAmount(e.target.value)}
-                    placeholder="例如 10.00"
-                    className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    disabled={isLockedFromEditing}
+                    placeholder="0.00"
+                    className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed text-xs sm:text-sm"
                   />
                 </div>
               ) : null}
 
               {/* 費用金額 (TWD) */}
-              <div className={currency !== 'TWD' ? 'sm:col-span-3' : 'sm:col-span-4'}>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  費用金額 (TWD 折合)
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1 truncate">
+                  {currency !== 'TWD' ? '費用 (TWD折合)' : '費用金額 (TWD)'}
                 </label>
                 <input
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
+                  disabled={isLockedFromEditing}
                   placeholder="0"
-                  className={`w-full px-2.5 py-2 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
+                  className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
                     errors.amount ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                  } outline-none focus:ring-2 focus:ring-indigo-500`}
+                  } outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed text-xs sm:text-sm`}
                   required
                 />
                 {errors.amount && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.amount}</p>}
               </div>
 
               {/* Requirement 4: 手續費 (預設為 0) */}
-              <div className={currency !== 'TWD' ? 'sm:col-span-3' : 'sm:col-span-2'}>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1 truncate">
                   手續費 (TWD)
                 </label>
                 <input
@@ -575,26 +601,26 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   min="0"
                   value={fee}
                   onChange={(e) => setFee(e.target.value)}
+                  disabled={isLockedFromEditing}
                   placeholder="0"
-                  className={`w-full px-2.5 py-2 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
+                  className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
                     errors.fee ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                  } outline-none focus:ring-2 focus:ring-indigo-500`}
+                  } outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed text-xs sm:text-sm`}
                 />
                 {errors.fee && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.fee}</p>}
               </div>
 
-              {/* Requirement 4: 合計金額 (不可變更，手續費加上費用金額) */}
-              <div className="sm:col-span-3">
-                <label className="block text-[11px] font-bold text-indigo-900 mb-1 flex items-center justify-between">
-                  <span>合計金額 (不可變更)</span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded">自動加總</span>
+              {/* Requirement 4: 合計金額 (手續費加上費用金額) */}
+              <div className={currency !== 'TWD' ? 'col-span-2 sm:col-span-1' : 'col-span-2 sm:col-span-1'}>
+                <label className="block text-[11px] font-bold text-indigo-900 mb-1 truncate">
+                  合計金額
                 </label>
                 <input
                   type="text"
                   value={`NT$ ${totalAmount.toLocaleString()}`}
                   readOnly
                   disabled
-                  className="w-full px-2.5 py-2 rounded-lg border border-indigo-200 bg-indigo-50/80 font-mono font-black text-indigo-950 text-sm cursor-not-allowed select-none"
+                  className="w-full px-2 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/90 font-mono font-black text-indigo-950 text-xs sm:text-sm cursor-not-allowed select-none"
                 />
               </div>
             </div>
@@ -616,8 +642,9 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 type="text"
                 value={invoiceNo}
                 onChange={(e) => setInvoiceNo(e.target.value)}
+                disabled={isLockedFromEditing}
                 placeholder="例如 AB-12345678"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono outline-none bg-white focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono outline-none bg-white focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -626,7 +653,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               <select
                 value={receiptStatus}
                 onChange={(e) => setReceiptStatus(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500"
+                disabled={isLockedFromEditing}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
               >
                 <option value="attached">發票/收據齊全 (Attached)</option>
                 <option value="missing">⚠️ 欠發票 (Missing Receipt)</option>
@@ -640,16 +668,17 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 type="text"
                 value={remark}
                 onChange={(e) => setRemark(e.target.value)}
+                disabled={isLockedFromEditing}
                 placeholder="如 10USD、手續費、公務車ETC等"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none bg-white focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none bg-white focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
               />
             </div>
           </div>
 
           {/* 底部按鈕 */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-200">
-            {/* 編輯模式下的刪除按鈕 */}
-            {editingExpense && onDelete ? (
+            {/* 編輯模式下的刪除按鈕 (未鎖定時才可刪除) */}
+            {editingExpense && onDelete && !isLockedFromEditing ? (
               <div>
                 {!isConfirmingDelete ? (
                   <button
@@ -691,15 +720,17 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-medium transition-colors cursor-pointer text-sm"
               >
-                取消
+                {isLockedFromEditing ? '關閉 (唯讀)' : '取消'}
               </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer text-sm"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{isRejectedExpense ? '重新送審 (送交部門審核)' : '儲存報支單據'}</span>
-              </button>
+              {!isLockedFromEditing && (
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer text-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isRejectedExpense ? '重新送審 (送交部門審核)' : '儲存報支單據'}</span>
+                </button>
+              )}
             </div>
           </div>
 

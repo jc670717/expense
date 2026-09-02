@@ -286,51 +286,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showUserDropdown ? 'rotate-180' : ''}`} />
           </div>
 
-          {/* Switch User Popover & Logout */}
+          {/* User Menu (Change Password & Logout) */}
           {showUserDropdown && (
             <div className="absolute bottom-16 left-2 right-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 space-y-1 animate-in fade-in">
-              <div className="px-2 py-1 text-[10px] font-bold text-indigo-300 uppercase tracking-wider flex items-center justify-between">
-                <span>快速切換登入身分</span>
-                <span className="text-slate-500 font-normal">點擊切換</span>
-              </div>
-              
-              <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
-                {allUsers.filter(u => u.status === 'active').map((u) => {
-                  const isCurrent = currentUser.id === u.id;
-                  return (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        onSwitchUser(u);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                        isCurrent 
-                          ? 'bg-indigo-600 text-white font-bold' 
-                          : 'text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      <div className="min-w-0 pr-1">
-                        <div className="flex items-center gap-1">
-                          <span className="truncate">{u.name}</span>
-                          {u.englishName && <span className="text-[10px] opacity-75">({u.englishName})</span>}
-                        </div>
-                        <div className="text-[10px] opacity-75 truncate">{u.roleTitle.split('/')[0]}</div>
-                      </div>
-                      {isCurrent && <span className="text-xs font-bold shrink-0">✓</span>}
-                    </button>
-                  );
-                })}
+              <div className="px-2.5 py-2 rounded-lg bg-slate-800/80 mb-1">
+                <div className="flex items-center gap-1 text-white text-xs font-bold truncate">
+                  <span>{currentUser.name}</span>
+                  {currentUser.englishName && <span className="text-[10px] text-slate-400 font-normal">({currentUser.englishName})</span>}
+                </div>
+                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                  {currentUser.department} · {currentUser.roleTitle}
+                </div>
               </div>
 
-              <div className="pt-1.5 border-t border-slate-800 mt-1 space-y-1">
+              <div className="space-y-1">
                 {onOpenChangePassword && (
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
                       onOpenChangePassword();
                     }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer font-bold transition-colors"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer font-semibold transition-colors"
                   >
                     <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
                     <span>自定義修改密碼</span>
@@ -343,7 +319,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       setShowUserDropdown(false);
                       onLogout();
                     }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-950/40 flex items-center gap-1.5 cursor-pointer font-bold transition-colors"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-950/40 flex items-center gap-1.5 cursor-pointer font-semibold transition-colors"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>登出系統 (Logout)</span>

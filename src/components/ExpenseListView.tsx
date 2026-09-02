@@ -6,6 +6,8 @@ import {
   Download, 
   Trash2, 
   Edit3, 
+  Eye,
+  Lock,
   CheckCircle, 
   XCircle, 
   Send, 
@@ -141,12 +143,23 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
     return filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
   }, [filteredExpenses]);
 
-  // 全選/反選
+  // 最高管理者無修改刪除及批次限制
+  const isSuperAdmin = currentUser.role === 'admin' || currentUser.position === 'admin';
+
+  // Requirement 7: 只要一但簽核過，就沒有前面的批次checkbox，除非最高管理
+  const selectableExpenses = useMemo(() => {
+    return filteredExpenses.filter(item => {
+      const isSignedOff = item.status === 'dept_approved' || item.status === 'admin_approved' || item.status === 'approved' || item.status === 'paid';
+      return isSuperAdmin || !isSignedOff;
+    });
+  }, [filteredExpenses, isSuperAdmin]);
+
+  // 全選/反選 (僅選取可批次操作的項目)
   const handleSelectAll = () => {
-    if (selectedIds.length === filteredExpenses.length) {
+    if (selectableExpenses.length > 0 && selectedIds.length === selectableExpenses.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredExpenses.map(e => e.id));
+      setSelectedIds(selectableExpenses.map(e => e.id));
     }
   };
 
@@ -461,9 +474,11 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                 <th className="p-3 w-10 text-center">
                   <input
                     type="checkbox"
-                    checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length}
+                    checked={selectableExpenses.length > 0 && selectedIds.length === selectableExpenses.length}
                     onChange={handleSelectAll}
-                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    disabled={selectableExpenses.length === 0}
+                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    title={selectableExpenses.length === 0 ? '無可批次選取之單據 (已簽核單據已鎖定)' : '全選可批次操作之單據'}
                   />
                 </th>
                 <th className="p-3 w-16">項次</th>
@@ -491,7 +506,12 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
               ) : (
                 filteredExpenses.map((item, idx) => {
                   const isSelected = selectedIds.includes(item.id);
-                  const canEdit = currentUser.role === 'admin' || currentUser.role === 'auditor' || item.applicant.toLowerCase() === currentUser.name.toLowerCase();
+                  const isApplicant = item.applicant.toLowerCase() === currentUser.name.toLowerCase() || (currentUser.englishName && item.applicant.toLowerCase() === currentUser.englishName.toLowerCase());
+                  const canEdit = isSuperAdmin || currentUser.role === 'auditor' || isApplicant;
+                  
+                  // Requirement 7: 只要一但簽核過(部門審核/最高管理/已核准/已撥款)，非最高管理即鎖定不可修改刪除與批次選取
+                  const isSignedOff = item.status === 'dept_approved' || item.status === 'admin_approved' || item.status === 'approved' || item.status === 'paid';
+                  const isLocked = !isSuperAdmin && isSignedOff;
 
                   return (
                     <tr 
@@ -500,14 +520,18 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                         isSelected ? 'bg-blue-50/40' : ''
                       } ${item.status === 'rejected' ? 'bg-red-50/30' : ''}`}
                     >
-                      {/* Checkbox */}
+                      {/* Checkbox (Requirement 7: 已簽核過則無批次 checkbox，除非最高管理) */}
                       <td className="p-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectOne(item.id)}
-                          className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        />
+                        {!isLocked ? (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectOne(item.id)}
+                            className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        ) : (
+                          <span className="text-slate-300 font-mono text-xs select-none" title="已簽核單據已鎖定，無法批次選取">-</span>
+                        )}
                       </td>
 
                       {/* 項次 */}
@@ -594,31 +618,8 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                       <td className="p-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
                           
-                          {/* 審核員/管理員快速操作 */}
-                          {currentUser.role !== 'editor' && item.status === 'submitted' && (
-                            <>
-                              <button
-                                onClick={() => onStatusChange(item.id, 'approved')}
-                                title="核准報支"
-                                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setRejectingId(item.id);
-                                  setRejectReason('');
-                                }}
-                                title="駁回"
-                                className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                              >
-                                <XCircle className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-
                           {/* 草稿狀態支援送審 */}
-                          {item.status === 'draft' && (
+                          {item.status === 'draft' && canEdit && (
                             <button
                               onClick={() => onStatusChange(item.id, 'submitted')}
                               title="送交審核"
@@ -628,19 +629,29 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                             </button>
                           )}
 
-                          {/* 編輯 (非鎖定狀態或管理員可編輯) */}
-                          {canEdit && (item.status !== 'approved' && item.status !== 'paid') && (
+                          {/* 編輯 / 檢視按鈕 */}
+                          {isLocked ? (
                             <button
                               onClick={() => onEditExpense(item)}
-                              title="編輯單據明細"
-                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              title="檢視單據明細 (已簽核唯讀)"
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                             >
-                              <Edit3 className="w-4 h-4" />
+                              <Eye className="w-4 h-4" />
                             </button>
+                          ) : (
+                            canEdit && (
+                              <button
+                                onClick={() => onEditExpense(item)}
+                                title={item.status === 'rejected' ? '編輯並重新送審' : '編輯單據明細'}
+                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                            )
                           )}
 
-                          {/* 刪除按鈕 (點擊直接觸發精緻的防呆刪除確認彈窗，支援所有未撥款單據或管理員覆核) */}
-                          {canEdit && (
+                          {/* 刪除按鈕 (Requirement 7: 只要簽核過即不可刪除，除非駁回或最高管理者) */}
+                          {!isLocked && canEdit && (
                             <button
                               onClick={() => setDeletingExpenseItem(item)}
                               title="刪除此筆報銷記錄"
@@ -650,10 +661,11 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                             </button>
                           )}
 
-                          {/* 已核准或已撥款時狀態標籤 */}
-                          {(item.status === 'approved' || item.status === 'paid') && (
-                            <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">
-                              {item.status === 'paid' ? '已撥款' : '已核准'}
+                          {/* 已鎖定標籤提示 */}
+                          {isLocked && (
+                            <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5 text-slate-400" />
+                              <span>{item.status === 'paid' ? '已撥款' : '已簽核'}</span>
                             </span>
                           )}
                         </div>

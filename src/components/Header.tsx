@@ -117,29 +117,9 @@ export const Header: React.FC<HeaderProps> = ({
             {currentTabInfo.title}
           </h2>
         </div>
-
-        {/* 幣別即時切換 Pills */}
-        <div className="hidden md:flex items-center bg-slate-100 rounded-lg p-0.5 text-[11px] font-bold border border-slate-200/80">
-          {['TWD', 'USD', 'JPY', 'RMB'].map((curr) => {
-            const isSelected = selectedCurrency === curr;
-            return (
-              <button
-                key={curr}
-                onClick={() => onSelectCurrency && onSelectCurrency(curr)}
-                className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                  isSelected 
-                    ? 'bg-white shadow-2xs text-indigo-600 font-bold' 
-                    : 'text-slate-400 hover:text-slate-700'
-                }`}
-              >
-                {curr}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
-      {/* 右側：搜尋框 + 快速新增按鈕 + 通知中心 + 使用者快速切換 */}
+      {/* 右側：搜尋框 + 快速新增按鈕 + 通知中心 + 使用者資訊選單 */}
       <div className="flex items-center gap-2 sm:gap-3">
         
         {/* 全局搜尋框 */}
@@ -250,68 +230,37 @@ export const Header: React.FC<HeaderProps> = ({
             <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
           </button>
 
-          {/* 使用者下拉切換清單 */}
+          {/* 使用者選單 */}
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-64 sm:w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-xs animate-in fade-in">
-              <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-slate-700 font-bold">
-                  <Zap className="w-3.5 h-3.5 text-amber-500" />
-                  <span>快速切換登入身分</span>
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-xs animate-in fade-in">
+              <div className="p-3 bg-slate-50 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                    {currentUser.englishName ? currentUser.englishName.substring(0, 2).toUpperCase() : currentUser.name.substring(0, 2)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-slate-800 text-sm truncate flex items-center gap-1">
+                      <span>{currentUser.name}</span>
+                      {currentUser.englishName && <span className="text-xs text-slate-500 font-normal">({currentUser.englishName})</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${currentPos.bg}`}>
+                        {currentPos.text}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate">{currentUser.department}</span>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-[10px] text-slate-400">點擊即切換</span>
               </div>
 
-              <div className="max-h-64 overflow-y-auto p-1.5 space-y-1">
-                {allUsers.filter(u => u.status === 'active').map((u) => {
-                  const isCurrent = u.id === currentUser.id;
-                  const uPos = getPositionLabel(u);
-                  return (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        if (onSwitchUser) onSwitchUser(u);
-                        setShowUserMenu(false);
-                      }}
-                      className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
-                        isCurrent
-                          ? 'bg-indigo-50 text-indigo-900 font-bold border border-indigo-200'
-                          : 'hover:bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center font-bold text-[11px] shrink-0">
-                          {u.englishName ? u.englishName.substring(0, 2).toUpperCase() : u.name.substring(0, 2)}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1 truncate">
-                            <span className="font-bold">{u.name}</span>
-                            {u.englishName && <span className="text-slate-400 text-[10px]">({u.englishName})</span>}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {u.department}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${uPos.bg}`}>
-                          {uPos.text}
-                        </span>
-                        {isCurrent && <span className="text-indigo-600 font-bold text-xs">✓</span>}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="p-1.5 bg-slate-50 border-t border-slate-100 space-y-1">
+              <div className="p-2 bg-white space-y-1">
                 {onOpenChangePassword && (
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
                       onOpenChangePassword();
                     }}
-                    className="w-full text-left p-2 rounded-lg text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2 font-bold cursor-pointer transition-colors"
+                    className="w-full text-left p-2 rounded-lg text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2 font-semibold cursor-pointer transition-colors"
                   >
                     <KeyRound className="w-4 h-4 text-indigo-500" />
                     <span>自定義修改密碼 (Change Password)</span>
@@ -324,7 +273,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowUserMenu(false);
                       onLogout();
                     }}
-                    className="w-full text-left p-2 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-bold cursor-pointer transition-colors"
+                    className="w-full text-left p-2 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-semibold cursor-pointer transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>登出系統 (Logout)</span>

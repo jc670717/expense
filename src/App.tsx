@@ -488,37 +488,43 @@ export default function App() {
     if (editingExpense) {
       // 編輯既有費用
       let updatedItem: ExpenseItem | null = null;
-      setExpenses(prev => prev.map(item => {
-        if (item.id === editingExpense.id) {
-          const isReSubmitting = item.status === 'rejected' || !!item.rejectedReason;
-          const numAmount = Number(expenseData.amount !== undefined ? expenseData.amount : item.amount);
-          const numFee = Number(expenseData.fee !== undefined ? expenseData.fee : item.fee || 0);
-          const totalAmount = Number(expenseData.totalAmount || (numAmount + numFee));
+      setExpenses(prev => {
+        const nextList = prev.map(item => {
+          if (item.id === editingExpense.id) {
+            const isReSubmitting = item.status === 'rejected' || !!item.rejectedReason;
+            const numAmount = Number(expenseData.amount !== undefined ? expenseData.amount : item.amount);
+            const numFee = Number(expenseData.fee !== undefined ? expenseData.fee : item.fee || 0);
+            const totalAmount = Number(expenseData.totalAmount || (numAmount + numFee));
 
-          updatedItem = {
-            ...item,
-            ...expenseData,
-            amount: numAmount,
-            fee: numFee,
-            totalAmount: totalAmount,
-            applicantDepartment: applicantDept,
-            // 駁回後的編輯公務費用報銷單，儲存後清掉駁回原因自動改為重新送審(待審核)
-            status: isReSubmitting ? 'submitted' : (expenseData.status || item.status),
-            rejectedReason: isReSubmitting ? undefined : item.rejectedReason,
-            rejectedBy: isReSubmitting ? undefined : item.rejectedBy,
-            rejectedAt: isReSubmitting ? undefined : item.rejectedAt,
-            deptApprover: isReSubmitting ? undefined : item.deptApprover,
-            deptApprovedAt: isReSubmitting ? undefined : item.deptApprovedAt,
-            adminApprover: isReSubmitting ? undefined : item.adminApprover,
-            adminApprovedAt: isReSubmitting ? undefined : item.adminApprovedAt,
-            disbursedBy: isReSubmitting ? undefined : item.disbursedBy,
-            disbursedAt: isReSubmitting ? undefined : item.disbursedAt,
-            updatedAt: new Date().toISOString(),
-          } as ExpenseItem;
-          return updatedItem;
-        }
-        return item;
-      }));
+            updatedItem = {
+              ...item,
+              ...expenseData,
+              amount: numAmount,
+              fee: numFee,
+              totalAmount: totalAmount,
+              applicantDepartment: applicantDept,
+              // 駁回後的編輯公務費用報銷單，儲存後清掉駁回原因自動改為重新送審(待審核)
+              status: isReSubmitting ? 'submitted' : (expenseData.status || item.status),
+              approver: isReSubmitting ? undefined : item.approver,
+              approvedAt: isReSubmitting ? undefined : item.approvedAt,
+              rejectedReason: isReSubmitting ? undefined : item.rejectedReason,
+              rejectedBy: isReSubmitting ? undefined : item.rejectedBy,
+              rejectedAt: isReSubmitting ? undefined : item.rejectedAt,
+              deptApprover: isReSubmitting ? undefined : item.deptApprover,
+              deptApprovedAt: isReSubmitting ? undefined : item.deptApprovedAt,
+              adminApprover: isReSubmitting ? undefined : item.adminApprover,
+              adminApprovedAt: isReSubmitting ? undefined : item.adminApprovedAt,
+              disbursedBy: isReSubmitting ? undefined : item.disbursedBy,
+              disbursedAt: isReSubmitting ? undefined : item.disbursedAt,
+              updatedAt: new Date().toISOString(),
+            } as ExpenseItem;
+            return updatedItem;
+          }
+          return item;
+        });
+        localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+        return nextList;
+      });
 
       if (updatedItem) {
         const itemToSave = updatedItem;

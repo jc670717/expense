@@ -371,7 +371,8 @@ export function createExpressApp() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
          ON CONFLICT (id) DO UPDATE SET
            claim_month = EXCLUDED.claim_month, date = EXCLUDED.date, applicant = EXCLUDED.applicant,
-           applicant_department = EXCLUDED.applicant_department,
+           applicant_id = EXCLUDED.applicant_id, applicant_department = EXCLUDED.applicant_department,
+           company_name = EXCLUDED.company_name, company_id = EXCLUDED.company_id,
            project_name = EXCLUDED.project_name, project_id = EXCLUDED.project_id,
            category_name = EXCLUDED.category_name, category_id = EXCLUDED.category_id,
            description = EXCLUDED.description, amount = EXCLUDED.amount, fee = EXCLUDED.fee, total_amount = EXCLUDED.total_amount, currency = EXCLUDED.currency,
