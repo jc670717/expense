@@ -14,7 +14,8 @@ import {
   ChevronDown,
   LogOut,
   Zap,
-  Shield
+  Shield,
+  KeyRound
 } from 'lucide-react';
 import { CurrencyRate, NotificationItem, UserProfile } from '../types';
 
@@ -23,6 +24,7 @@ interface HeaderProps {
   allUsers?: UserProfile[];
   onSwitchUser?: (user: UserProfile) => void;
   onLogout?: () => void;
+  onOpenChangePassword?: () => void;
   activeTab: string;
   onOpenCreateExpense: () => void;
   onToggleMobileSidebar: () => void;
@@ -41,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   allUsers = [],
   onSwitchUser,
   onLogout,
+  onOpenChangePassword,
   activeTab,
   onOpenCreateExpense,
   onToggleMobileSidebar,
@@ -301,8 +304,21 @@ export const Header: React.FC<HeaderProps> = ({
                 })}
               </div>
 
-              {onLogout && (
-                <div className="p-1.5 bg-slate-50 border-t border-slate-100">
+              <div className="p-1.5 bg-slate-50 border-t border-slate-100 space-y-1">
+                {onOpenChangePassword && (
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      onOpenChangePassword();
+                    }}
+                    className="w-full text-left p-2 rounded-lg text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2 font-bold cursor-pointer transition-colors"
+                  >
+                    <KeyRound className="w-4 h-4 text-indigo-500" />
+                    <span>自定義修改密碼 (Change Password)</span>
+                  </button>
+                )}
+
+                {onLogout && (
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
@@ -313,8 +329,8 @@ export const Header: React.FC<HeaderProps> = ({
                     <LogOut className="w-4 h-4" />
                     <span>登出系統 (Logout)</span>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </div>

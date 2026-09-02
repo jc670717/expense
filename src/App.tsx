@@ -13,6 +13,7 @@ import { ReportsExportView } from './components/ReportsExportView';
 import { MasterDataView } from './components/MasterDataView';
 import { AuditBackupView } from './components/AuditBackupView';
 import { LoginScreen } from './components/LoginScreen';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 
 import { 
   AuditLog, 
@@ -45,7 +46,9 @@ import {
   syncDeleteExpenseRemote, 
   syncBatchDeleteExpensesRemote, 
   syncUpdateExpenseStatusRemote, 
-  syncBatchUpdateExpenseStatusRemote 
+  syncBatchUpdateExpenseStatusRemote,
+  syncSaveUserRemote,
+  syncDeleteUserRemote
 } from './services/api';
 
 export default function App() {
@@ -183,30 +186,10 @@ export default function App() {
     if (!saved) return INITIAL_USERS;
     try {
       const parsed: UserProfile[] = JSON.parse(saved);
-      // 合併預設帳號，確保新加入的展示帳號與必要欄位皆完整
-      const merged = INITIAL_USERS.map(initU => {
-        const found = parsed.find(p => p.id === initU.id);
-        if (found) {
-          return {
-            ...initU,
-            ...found,
-            username: found.username || initU.username,
-            englishName: found.englishName || initU.englishName,
-            password: found.password || initU.password || '123',
-            position: found.position || initU.position || 'editor',
-            status: found.status || initU.status || 'active',
-            allowedTabs: (found.allowedTabs && found.allowedTabs.length > 0) ? found.allowedTabs : initU.allowedTabs,
-          };
-        }
-        return initU;
-      });
-      // 包含任何自訂新增的使用者
-      parsed.forEach(p => {
-        if (!merged.find(m => m.id === p.id)) {
-          merged.push(p);
-        }
-      });
-      return merged;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+      return INITIAL_USERS;
     } catch {
       return INITIAL_USERS;
     }
@@ -260,8 +243,10 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const match = INITIAL_USERS.find(u => u.id === parsed.id);
-        return match ? { ...match, ...parsed } : parsed;
+        if (parsed && typeof parsed === 'object' && parsed.id) {
+          return parsed;
+        }
+        return INITIAL_USERS[0];
       } catch {
         return INITIAL_USERS[0];
       }
@@ -278,6 +263,7 @@ export default function App() {
   // 費用新增/編輯彈窗狀態
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
 
   // 儲存至 localStorage
   useEffect(() => {
@@ -677,11 +663,21 @@ export default function App() {
 
   const handleSaveUser = (u: Partial<UserProfile>) => {
     if (u.id) {
-      setUsers(prev => prev.map(user => user.id === u.id ? { ...user, ...u } as UserProfile : user));
+      const oldUser = users.find(user => user.id === u.id);
+      const updatedUser = { ...oldUser, ...u } as UserProfile;
+      setUsers(prev => prev.map(user => user.id === u.id ? updatedUser : user));
       if (currentUser.id === u.id) {
         setCurrentUser(prev => ({ ...prev, ...u } as UserProfile));
       }
-      addAuditLog('主檔維護', '修改同仁權限', `更新同仁【${u.name}】之職位與模組權限`);
+      if (oldUser && u.name && oldUser.name !== u.name) {
+        setExpenses(prev => prev.map(exp => 
+          (exp.applicantId === u.id || exp.applicant === oldUser.name || exp.applicant === oldUser.englishName) 
+            ? { ...exp, applicant: u.name! } 
+            : exp
+        ));
+      }
+      syncSaveUserRemote(updatedUser);
+      addAuditLog('主檔維護', '修改同仁權限', `更新同仁【${u.name || updatedUser.name}】之職位與模組權限`);
     } else {
       const newUser: UserProfile = {
         id: `user-${Date.now()}`,
@@ -698,8 +694,49 @@ export default function App() {
         allowedTabs: u.allowedTabs || ['dashboard', 'expenses', 'scanner', 'recurring', 'reports'],
       };
       setUsers(prev => [...prev, newUser]);
+      syncSaveUserRemote(newUser);
       addAuditLog('主檔維護', '新增同仁帳號', `新增同仁帳號【${newUser.name}】(${newUser.username})`);
     }
+  };
+
+  const handleDeleteUser = (id: string) => {
+    const isSuperAdmin = currentUser.position === 'admin' || currentUser.role === 'admin';
+    if (!isSuperAdmin) {
+      alert('【權限不足】只有系統最高管理者 (Admin) 擁有刪除同仁帳號的權限！');
+      return;
+    }
+
+    if (id === currentUser.id) {
+      alert('【安全防護】您無法刪除目前正在登入使用的最高管理者帳號！');
+      return;
+    }
+
+    const targetUser = users.find(u => u.id === id);
+    if (!targetUser) return;
+
+    setUsers(prev => prev.filter(u => u.id !== id));
+    syncDeleteUserRemote(id);
+    addAuditLog(
+      '主檔維護',
+      '刪除同仁帳號',
+      `永久刪除同仁【${targetUser.name}】(${targetUser.username || targetUser.englishName || targetUser.email}) 帳號`
+    );
+  };
+
+  // 同仁自定義密碼變更
+  const handleSaveUserPassword = (newPassword: string) => {
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      password: newPassword,
+    };
+    setCurrentUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    syncSaveUserRemote(updatedUser);
+    addAuditLog(
+      '帳號資安',
+      '變更密碼',
+      `同仁【${currentUser.name}】(${currentUser.username || currentUser.englishName || currentUser.email}) 成功自定義修改登入密碼`
+    );
   };
 
   const handleSaveCurrency = (curr: CurrencyRate) => {
@@ -796,6 +833,7 @@ export default function App() {
         allUsers={users}
         onSwitchUser={handleSwitchUser}
         onLogout={handleLogout}
+        onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
         pendingApprovalCount={pendingApprovalCount}
         budgetWarningCount={budgetWarningCount}
         isOpenMobile={isMobileSidebarOpen}
@@ -811,6 +849,7 @@ export default function App() {
           allUsers={users}
           onSwitchUser={handleSwitchUser}
           onLogout={handleLogout}
+          onOpenChangePassword={() => setIsChangePasswordModalOpen(true)}
           activeTab={activeTab}
           onOpenCreateExpense={handleOpenCreateExpense}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
@@ -944,9 +983,11 @@ export default function App() {
               categories={categories}
               users={users}
               currencies={currencies}
+              currentUser={currentUser}
               onSaveCompany={handleSaveCompany}
               onSaveCategory={handleSaveCategory}
               onSaveUser={handleSaveUser}
+              onDeleteUser={handleDeleteUser}
               onSaveCurrency={handleSaveCurrency}
             />
           )}
@@ -996,6 +1037,14 @@ export default function App() {
         currentUser={currentUser}
         allUsers={users}
         allExpenses={expenses}
+      />
+
+      {/* 5. 同仁自定義修改密碼彈窗 */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        currentUser={currentUser}
+        onSavePassword={handleSaveUserPassword}
       />
 
     </div>

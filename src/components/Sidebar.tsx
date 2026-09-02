@@ -15,7 +15,8 @@ import {
   User,
   LogOut,
   Sparkles,
-  Building2
+  Building2,
+  KeyRound
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 
@@ -26,6 +27,7 @@ interface SidebarProps {
   allUsers: UserProfile[];
   onSwitchUser: (user: UserProfile) => void;
   onLogout?: () => void;
+  onOpenChangePassword?: () => void;
   pendingApprovalCount: number;
   budgetWarningCount: number;
   isOpenMobile?: boolean;
@@ -39,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   allUsers,
   onSwitchUser,
   onLogout,
+  onOpenChangePassword,
   pendingApprovalCount,
   budgetWarningCount,
   isOpenMobile = false,
@@ -320,8 +323,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 })}
               </div>
 
-              {onLogout && (
-                <div className="pt-1.5 border-t border-slate-800 mt-1">
+              <div className="pt-1.5 border-t border-slate-800 mt-1 space-y-1">
+                {onOpenChangePassword && (
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onOpenChangePassword();
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer font-bold transition-colors"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>自定義修改密碼</span>
+                  </button>
+                )}
+
+                {onLogout && (
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
@@ -332,8 +348,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <LogOut className="w-3.5 h-3.5" />
                     <span>登出系統 (Logout)</span>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </div>

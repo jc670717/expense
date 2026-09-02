@@ -26,9 +26,11 @@ interface MasterDataViewProps {
   categories: ExpenseCategory[];
   users: UserProfile[];
   currencies: CurrencyRate[];
+  currentUser: UserProfile;
   onSaveCompany: (company: Partial<Company>) => void;
   onSaveCategory: (category: Partial<ExpenseCategory>) => void;
   onSaveUser: (user: Partial<UserProfile>) => void;
+  onDeleteUser?: (id: string) => void;
   onSaveCurrency: (currency: CurrencyRate) => void;
 }
 
@@ -49,11 +51,14 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   categories,
   users,
   currencies,
+  currentUser,
   onSaveCompany,
   onSaveCategory,
   onSaveUser,
+  onDeleteUser,
   onSaveCurrency,
 }) => {
+  const isSuperAdmin = currentUser?.position === 'admin' || currentUser?.role === 'admin';
   const [activeSubTab, setActiveSubTab] = useState<'companies' | 'categories' | 'users' | 'currencies'>('companies');
 
   // 公司編輯狀態
@@ -146,6 +151,40 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       allowedTabs: userAllowedTabs,
     });
     setUserModalOpen(false);
+  };
+
+  // 處理同仁刪除 (僅最高管理者有權限)
+  const handleDeleteUser = (u: UserProfile) => {
+    if (!isSuperAdmin) {
+      alert('【權限不足】\n僅有系統最高管理者 (Admin) 擁有刪除同仁帳號的名冊維護權限！');
+      return;
+    }
+
+    if (u.id === currentUser?.id) {
+      alert('【安全防護】\n您無法刪除目前正在登入使用的最高管理者帳號！');
+      return;
+    }
+
+    const activeAdmins = users.filter(
+      x => (x.position === 'admin' || x.role === 'admin') && x.status === 'active'
+    );
+    if ((u.position === 'admin' || u.role === 'admin') && activeAdmins.length <= 1) {
+      alert('【安全防護】\n系統必須保留至少一位在職的最高管理者，無法刪除最後一位管理員！');
+      return;
+    }
+
+    if (
+      confirm(
+        `【危險操作確認】\n確定要永久刪除同仁「${u.name}」(${u.username || u.englishName || u.email}) 的帳號資料嗎？\n\n此動作將立即移除該同仁的名冊紀錄，並記錄於系統稽核歷程中。`
+      )
+    ) {
+      if (onDeleteUser) {
+        onDeleteUser(u.id);
+      }
+      if (userModalOpen) {
+        setUserModalOpen(false);
+      }
+    }
   };
 
   const toggleTabPermission = (tabId: string) => {
@@ -464,26 +503,50 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      setEditingUser(u);
-                      setUserName(u.name);
-                      setUserEnglishName(u.englishName || '');
-                      setUserUsername(u.username || u.englishName?.toLowerCase() || '');
-                      setUserPassword(u.password || '123');
-                      setUserEmail(u.email);
-                      setUserPosition(u.position || (u.role as UserPosition) || 'editor');
-                      setUserStatus(u.status || 'active');
-                      setUserRoleTitle(u.roleTitle);
-                      setUserDept(u.department || '研發處');
-                      setUserAllowedTabs(u.allowedTabs || ALL_SYSTEM_TABS.map(t => t.id));
-                      setUserModalOpen(true);
-                    }}
-                    className="p-1 text-slate-400 hover:text-blue-600 cursor-pointer"
-                    title="編輯同仁設定"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingUser(u);
+                        setUserName(u.name);
+                        setUserEnglishName(u.englishName || '');
+                        setUserUsername(u.username || u.englishName?.toLowerCase() || '');
+                        setUserPassword(u.password || '123');
+                        setUserEmail(u.email);
+                        setUserPosition(u.position || (u.role as UserPosition) || 'editor');
+                        setUserStatus(u.status || 'active');
+                        setUserRoleTitle(u.roleTitle);
+                        setUserDept(u.department || '研發處');
+                        setUserAllowedTabs(u.allowedTabs || ALL_SYSTEM_TABS.map(t => t.id));
+                        setUserModalOpen(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                      title="編輯同仁設定"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+
+                    {isSuperAdmin ? (
+                      <button
+                        onClick={() => handleDeleteUser(u)}
+                        disabled={u.id === currentUser?.id}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          u.id === currentUser?.id
+                            ? 'text-slate-200 cursor-not-allowed opacity-40'
+                            : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                        }`}
+                        title={u.id === currentUser?.id ? '無法刪除目前登入中的帳號' : '刪除同仁帳號 (僅最高管理者)'}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span
+                        className="p-1.5 text-slate-300 cursor-not-allowed opacity-50"
+                        title="僅最高管理者 (Admin) 具有刪除同仁名冊之權限"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* 職位與部門 */}
@@ -952,20 +1015,35 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setUserModalOpen(false)}
-                  className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded-lg shadow-sm"
-                >
-                  儲存帳號設定
-                </button>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                {editingUser && isSuperAdmin && editingUser.id !== currentUser?.id ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUser(editingUser)}
+                    className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    刪除此同仁帳號
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUserModalOpen(false)}
+                    className="px-3.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg font-medium cursor-pointer"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm cursor-pointer"
+                  >
+                    儲存帳號設定
+                  </button>
+                </div>
               </div>
             </form>
           </div>

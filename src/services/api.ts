@@ -123,3 +123,25 @@ export async function syncBatchUpdateExpenseStatusRemote(
     console.warn('Sync batch update status remote error:', err);
   }
 }
+
+// 同仁/使用者異動同步
+export async function syncSaveUserRemote(user: UserProfile) {
+  try {
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user)
+    });
+  } catch (err) {
+    console.warn('Sync save user remote error:', err);
+  }
+}
+
+export async function syncDeleteUserRemote(id: string) {
+  try {
+    await fetch(`/api/users/${id}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn('Sync delete user remote error:', err);
+  }
+}
+

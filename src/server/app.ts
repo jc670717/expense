@@ -362,5 +362,40 @@ export function createExpressApp() {
     }
   });
 
+  // 4. 同仁/使用者操作 API
+  app.post('/api/users', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const u = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO users (id, name, english_name, username, password, email, role, role_title, position, status, allowed_tabs, company_id, department, avatar_bg)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, english_name = EXCLUDED.english_name, username = EXCLUDED.username,
+           password = EXCLUDED.password, email = EXCLUDED.email, role = EXCLUDED.role,
+           role_title = EXCLUDED.role_title, position = EXCLUDED.position, status = EXCLUDED.status,
+           allowed_tabs = EXCLUDED.allowed_tabs, department = EXCLUDED.department, avatar_bg = EXCLUDED.avatar_bg`,
+        [u.id, u.name, u.englishName, u.username, u.password || '123', u.email, u.role, u.roleTitle, u.position || u.role, u.status || 'active', JSON.stringify(u.allowedTabs || []), u.companyId, u.department, u.avatarBg]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/users/:id', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return app;
 }
