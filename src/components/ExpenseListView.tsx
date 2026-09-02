@@ -161,13 +161,18 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
       case 'draft':
         return <span className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700 rounded-full">草稿</span>;
       case 'submitted':
-        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800 rounded-full animate-pulse">待審核</span>;
+        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800 rounded-full animate-pulse">1.待部門審核</span>;
+      case 'dept_approved':
+        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-blue-100 text-blue-800 rounded-full animate-pulse">2.待最高管理</span>;
+      case 'admin_approved':
       case 'approved':
-        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-blue-100 text-blue-800 rounded-full">已核准</span>;
+        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-indigo-100 text-indigo-800 rounded-full">3.待行政撥款</span>;
       case 'rejected':
-        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-red-100 text-red-800 rounded-full">已駁回</span>;
+        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-red-100 text-red-800 rounded-full">已退件駁回</span>;
       case 'paid':
-        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 text-emerald-800 rounded-full">已撥款</span>;
+        return <span className="px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 text-emerald-800 rounded-full">已結案撥款</span>;
+      default:
+        return <span className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700 rounded-full">{status}</span>;
     }
   };
 

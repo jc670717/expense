@@ -82,6 +82,7 @@ export function createExpressApp() {
             date: r.date,
             applicant: r.applicant,
             applicantId: r.applicant_id,
+            applicantDepartment: r.applicant_department,
             companyName: r.company_name,
             companyId: r.company_id,
             projectName: r.project_name,
@@ -93,6 +94,8 @@ export function createExpressApp() {
             foreignAmount: r.foreign_amount ? Number(r.foreign_amount) : undefined,
             exchangeRate: r.exchange_rate ? Number(r.exchange_rate) : 1,
             amount: Number(r.amount),
+            fee: Number(r.fee || 0),
+            totalAmount: Number(r.total_amount || (Number(r.amount) + Number(r.fee || 0))),
             invoiceNo: r.invoice_no,
             receiptImage: r.receipt_image,
             receiptStatus: r.receipt_status,
@@ -100,6 +103,14 @@ export function createExpressApp() {
             approver: r.approver,
             approvedAt: r.approved_at,
             rejectedReason: r.rejected_reason,
+            rejectedBy: r.rejected_by,
+            rejectedAt: r.rejected_at,
+            deptApprover: r.dept_approver,
+            deptApprovedAt: r.dept_approved_at,
+            adminApprover: r.admin_approver,
+            adminApprovedAt: r.admin_approved_at,
+            disbursedBy: r.disbursed_by,
+            disbursedAt: r.disbursed_at,
             remark: r.remark
           })),
           users: usersRes.rows.map(u => ({
@@ -256,19 +267,37 @@ export function createExpressApp() {
       // 寫入 Expenses
       if (Array.isArray(expenses) && expenses.length > 0) {
         for (const e of expenses) {
+          const numAmount = Number(e.amount || 0);
+          const numFee = Number(e.fee || 0);
+          const numTotal = Number(e.totalAmount || (numAmount + numFee));
           await client.query(
-            `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, remark)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+            `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, applicant_department, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, fee, total_amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, rejected_by, rejected_at, dept_approver, dept_approved_at, admin_approver, admin_approved_at, disbursed_by, disbursed_at, remark)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
              ON CONFLICT (id) DO UPDATE SET
                claim_month = EXCLUDED.claim_month, date = EXCLUDED.date, applicant = EXCLUDED.applicant,
+               applicant_department = EXCLUDED.applicant_department,
                project_name = EXCLUDED.project_name, project_id = EXCLUDED.project_id,
                category_name = EXCLUDED.category_name, category_id = EXCLUDED.category_id,
-               description = EXCLUDED.description, amount = EXCLUDED.amount, currency = EXCLUDED.currency,
+               description = EXCLUDED.description, amount = EXCLUDED.amount, fee = EXCLUDED.fee, total_amount = EXCLUDED.total_amount, currency = EXCLUDED.currency,
                foreign_amount = EXCLUDED.foreign_amount, exchange_rate = EXCLUDED.exchange_rate,
                invoice_no = EXCLUDED.invoice_no, receipt_image = EXCLUDED.receipt_image, receipt_status = EXCLUDED.receipt_status,
                status = EXCLUDED.status, approver = EXCLUDED.approver, approved_at = EXCLUDED.approved_at,
-               rejected_reason = EXCLUDED.rejected_reason, remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
-            [e.id, e.itemNo || 1, e.claimMonth, e.date, e.applicant, e.applicantId, e.companyName, e.companyId, e.projectName, e.projectId, e.description, e.categoryName, e.categoryId, e.currency || 'TWD', e.foreignAmount || null, e.exchangeRate || 1, e.amount, e.invoiceNo, e.receiptImage, e.receiptStatus, e.status, e.approver, e.approvedAt, e.rejectedReason, e.remark]
+               rejected_reason = EXCLUDED.rejected_reason, rejected_by = EXCLUDED.rejected_by, rejected_at = EXCLUDED.rejected_at,
+               dept_approver = EXCLUDED.dept_approver, dept_approved_at = EXCLUDED.dept_approved_at,
+               admin_approver = EXCLUDED.admin_approver, admin_approved_at = EXCLUDED.admin_approved_at,
+               disbursed_by = EXCLUDED.disbursed_by, disbursed_at = EXCLUDED.disbursed_at,
+               remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
+            [
+              e.id, e.itemNo || 1, e.claimMonth, e.date, e.applicant, e.applicantId, e.applicantDepartment || null,
+              e.companyName, e.companyId, e.projectName, e.projectId, e.description, e.categoryName, e.categoryId,
+              e.currency || 'TWD', e.foreignAmount || null, e.exchangeRate || 1, numAmount, numFee, numTotal,
+              e.invoiceNo, e.receiptImage, e.receiptStatus, e.status, e.approver, e.approvedAt,
+              e.rejectedReason, e.rejectedBy || null, e.rejectedAt || null,
+              e.deptApprover || null, e.deptApprovedAt || null,
+              e.adminApprover || null, e.adminApprovedAt || null,
+              e.disbursedBy || null, e.disbursedAt || null,
+              e.remark
+            ]
           );
         }
       }
@@ -332,20 +361,39 @@ export function createExpressApp() {
     if (!pool) return res.status(200).json({ success: true, mode: 'local' });
 
     const e = req.body;
+    const numAmount = Number(e.amount || 0);
+    const numFee = Number(e.fee || 0);
+    const numTotal = Number(e.totalAmount || (numAmount + numFee));
+
     try {
       await pool.query(
-        `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, remark)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+        `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, applicant_department, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, fee, total_amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, rejected_by, rejected_at, dept_approver, dept_approved_at, admin_approver, admin_approved_at, disbursed_by, disbursed_at, remark)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
          ON CONFLICT (id) DO UPDATE SET
            claim_month = EXCLUDED.claim_month, date = EXCLUDED.date, applicant = EXCLUDED.applicant,
+           applicant_department = EXCLUDED.applicant_department,
            project_name = EXCLUDED.project_name, project_id = EXCLUDED.project_id,
            category_name = EXCLUDED.category_name, category_id = EXCLUDED.category_id,
-           description = EXCLUDED.description, amount = EXCLUDED.amount, currency = EXCLUDED.currency,
+           description = EXCLUDED.description, amount = EXCLUDED.amount, fee = EXCLUDED.fee, total_amount = EXCLUDED.total_amount, currency = EXCLUDED.currency,
            foreign_amount = EXCLUDED.foreign_amount, exchange_rate = EXCLUDED.exchange_rate,
            invoice_no = EXCLUDED.invoice_no, receipt_image = EXCLUDED.receipt_image, receipt_status = EXCLUDED.receipt_status,
            status = EXCLUDED.status, approver = EXCLUDED.approver, approved_at = EXCLUDED.approved_at,
-           rejected_reason = EXCLUDED.rejected_reason, remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
-        [e.id, e.itemNo || 1, e.claimMonth, e.date, e.applicant, e.applicantId, e.companyName, e.companyId, e.projectName, e.projectId, e.description, e.categoryName, e.categoryId, e.currency || 'TWD', e.foreignAmount || null, e.exchangeRate || 1, e.amount, e.invoiceNo, e.receiptImage, e.receiptStatus, e.status, e.approver, e.approvedAt, e.rejectedReason, e.remark]
+           rejected_reason = EXCLUDED.rejected_reason, rejected_by = EXCLUDED.rejected_by, rejected_at = EXCLUDED.rejected_at,
+           dept_approver = EXCLUDED.dept_approver, dept_approved_at = EXCLUDED.dept_approved_at,
+           admin_approver = EXCLUDED.admin_approver, admin_approved_at = EXCLUDED.admin_approved_at,
+           disbursed_by = EXCLUDED.disbursed_by, disbursed_at = EXCLUDED.disbursed_at,
+           remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
+        [
+          e.id, e.itemNo || 1, e.claimMonth, e.date, e.applicant, e.applicantId, e.applicantDepartment || null,
+          e.companyName, e.companyId, e.projectName, e.projectId, e.description, e.categoryName, e.categoryId,
+          e.currency || 'TWD', e.foreignAmount || null, e.exchangeRate || 1, numAmount, numFee, numTotal,
+          e.invoiceNo, e.receiptImage, e.receiptStatus, e.status, e.approver, e.approvedAt,
+          e.rejectedReason, e.rejectedBy || null, e.rejectedAt || null,
+          e.deptApprover || null, e.deptApprovedAt || null,
+          e.adminApprover || null, e.adminApprovedAt || null,
+          e.disbursedBy || null, e.disbursedAt || null,
+          e.remark
+        ]
       );
       res.json({ success: true });
     } catch (err: any) {
@@ -384,11 +432,53 @@ export function createExpressApp() {
     const pool = getDbPool();
     if (!pool) return res.status(200).json({ success: true, mode: 'local' });
 
-    const { status, rejectReason, approver, approvedAt } = req.body;
+    const { 
+      status, 
+      rejectReason, 
+      approver, 
+      approvedAt,
+      rejectedBy,
+      rejectedAt,
+      deptApprover,
+      deptApprovedAt,
+      adminApprover,
+      adminApprovedAt,
+      disbursedBy,
+      disbursedAt
+    } = req.body;
+
     try {
       await pool.query(
-        `UPDATE expenses SET status = $1, rejected_reason = $2, approver = $3, approved_at = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`,
-        [status, rejectReason || null, approver || null, approvedAt || null, req.params.id]
+        `UPDATE expenses SET 
+           status = $1, 
+           rejected_reason = $2, 
+           approver = $3, 
+           approved_at = $4,
+           rejected_by = $5,
+           rejected_at = $6,
+           dept_approver = $7,
+           dept_approved_at = $8,
+           admin_approver = $9,
+           admin_approved_at = $10,
+           disbursed_by = $11,
+           disbursed_at = $12,
+           updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $13`,
+        [
+          status, 
+          rejectReason || null, 
+          approver || null, 
+          approvedAt || null,
+          rejectedBy || null,
+          rejectedAt || null,
+          deptApprover || null,
+          deptApprovedAt || null,
+          adminApprover || null,
+          adminApprovedAt || null,
+          disbursedBy || null,
+          disbursedAt || null,
+          req.params.id
+        ]
       );
       res.json({ success: true });
     } catch (err: any) {
@@ -400,13 +490,46 @@ export function createExpressApp() {
     const pool = getDbPool();
     if (!pool) return res.status(200).json({ success: true, mode: 'local' });
 
-    const { ids, status, approver, approvedAt } = req.body;
+    const { 
+      ids, 
+      status, 
+      approver, 
+      approvedAt,
+      deptApprover,
+      deptApprovedAt,
+      adminApprover,
+      adminApprovedAt,
+      disbursedBy,
+      disbursedAt
+    } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) return res.json({ success: true });
 
     try {
       await pool.query(
-        `UPDATE expenses SET status = $1, approver = $2, approved_at = $3, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($4)`,
-        [status, approver || null, approvedAt || null, ids]
+        `UPDATE expenses SET 
+           status = $1, 
+           approver = $2, 
+           approved_at = $3,
+           dept_approver = COALESCE($4, dept_approver),
+           dept_approved_at = COALESCE($5, dept_approved_at),
+           admin_approver = COALESCE($6, admin_approver),
+           admin_approved_at = COALESCE($7, admin_approved_at),
+           disbursed_by = COALESCE($8, disbursed_by),
+           disbursed_at = COALESCE($9, disbursed_at),
+           updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ANY($10)`,
+        [
+          status, 
+          approver || null, 
+          approvedAt || null,
+          deptApprover || null,
+          deptApprovedAt || null,
+          adminApprover || null,
+          adminApprovedAt || null,
+          disbursedBy || null,
+          disbursedAt || null,
+          ids
+        ]
       );
       res.json({ success: true });
     } catch (err: any) {

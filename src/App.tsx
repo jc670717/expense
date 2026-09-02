@@ -482,30 +482,57 @@ export default function App() {
 
   const handleSaveExpense = async (expenseData: Partial<ExpenseItem>) => {
     setIsExpenseModalOpen(false);
+    const applicantUser = users.find(u => u.name === expenseData.applicant || u.englishName === expenseData.applicant);
+    const applicantDept = expenseData.applicantDepartment || applicantUser?.department || currentUser.department || '未分配部門';
+
     if (editingExpense) {
       // 編輯既有費用
       let updatedItem: ExpenseItem | null = null;
       setExpenses(prev => prev.map(item => {
         if (item.id === editingExpense.id) {
+          const isReSubmitting = item.status === 'rejected' || !!item.rejectedReason;
+          const numAmount = Number(expenseData.amount !== undefined ? expenseData.amount : item.amount);
+          const numFee = Number(expenseData.fee !== undefined ? expenseData.fee : item.fee || 0);
+          const totalAmount = Number(expenseData.totalAmount || (numAmount + numFee));
+
           updatedItem = {
             ...item,
             ...expenseData,
-            amount: Number(expenseData.amount || item.amount),
+            amount: numAmount,
+            fee: numFee,
+            totalAmount: totalAmount,
+            applicantDepartment: applicantDept,
+            // 駁回後的編輯公務費用報銷單，儲存後清掉駁回原因自動改為重新送審(待審核)
+            status: isReSubmitting ? 'submitted' : (expenseData.status || item.status),
+            rejectedReason: isReSubmitting ? undefined : item.rejectedReason,
+            rejectedBy: isReSubmitting ? undefined : item.rejectedBy,
+            rejectedAt: isReSubmitting ? undefined : item.rejectedAt,
+            deptApprover: isReSubmitting ? undefined : item.deptApprover,
+            deptApprovedAt: isReSubmitting ? undefined : item.deptApprovedAt,
+            adminApprover: isReSubmitting ? undefined : item.adminApprover,
+            adminApprovedAt: isReSubmitting ? undefined : item.adminApprovedAt,
+            disbursedBy: isReSubmitting ? undefined : item.disbursedBy,
+            disbursedAt: isReSubmitting ? undefined : item.disbursedAt,
             updatedAt: new Date().toISOString(),
           } as ExpenseItem;
           return updatedItem;
         }
         return item;
       }));
+
       if (updatedItem) {
         const itemToSave = updatedItem;
         await triggerSaveWithFeedback('正在同步更新費用單據至雲端資料庫...', async () => {
           await syncSaveExpenseRemote(itemToSave);
         });
       }
-      addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，金額變更為 NT$ ${expenseData.amount}`);
+      addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，合計金額變更為 NT$ ${expenseData.totalAmount || expenseData.amount}`);
     } else {
       // 新增費用
+      const numAmount = Number(expenseData.amount || 0);
+      const numFee = Number(expenseData.fee || 0);
+      const numTotal = Number(expenseData.totalAmount || (numAmount + numFee));
+
       const newItem: ExpenseItem = {
         id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         itemNo: expenses.length + 1,
@@ -514,12 +541,16 @@ export default function App() {
         companyName: expenseData.companyName || '邦捷總公司',
         projectName: expenseData.projectName || '金廈(泉)票務系統暨服務採購案',
         applicant: expenseData.applicant || currentUser.name,
+        applicantId: applicantUser?.id || currentUser.id,
+        applicantDepartment: applicantDept,
         categoryName: expenseData.categoryName || '住宿／車資',
         description: expenseData.description || '',
         currency: expenseData.currency || 'TWD',
         foreignAmount: expenseData.foreignAmount,
         exchangeRate: expenseData.exchangeRate || 1.0,
-        amount: Number(expenseData.amount || 0),
+        amount: numAmount,
+        fee: numFee,
+        totalAmount: numTotal,
         invoiceNo: expenseData.invoiceNo,
         receiptStatus: expenseData.receiptStatus || 'attached',
         receiptImage: expenseData.receiptImage,
@@ -531,7 +562,7 @@ export default function App() {
       await triggerSaveWithFeedback('正在新增費用單據至雲端資料庫...', async () => {
         await syncSaveExpenseRemote(newItem);
       });
-      addAuditLog('費用登記', '新增費用', `申請人【${newItem.applicant}】新增費用單據：${newItem.description}（金額 NT$ ${newItem.amount}）`);
+      addAuditLog('費用登記', '新增費用', `申請人【${newItem.applicant}】新增費用單據：${newItem.description}（費用 NT$ ${newItem.amount} + 手續費 NT$ ${newItem.fee || 0} = 合計 NT$ ${newItem.totalAmount}）`);
     }
   };
 
@@ -539,29 +570,67 @@ export default function App() {
     const target = expenses.find(e => e.id === id);
     if (!target) return;
 
-    const approverName = newStatus === 'approved' ? currentUser.name : target.approvedBy;
-    const approvedAtTime = newStatus === 'approved' ? new Date().toISOString().split('T')[0] : target.approvedAt;
+    const today = new Date().toISOString().split('T')[0];
+    let extraMeta: {
+      rejectedBy?: string;
+      rejectedAt?: string;
+      deptApprover?: string;
+      deptApprovedAt?: string;
+      adminApprover?: string;
+      adminApprovedAt?: string;
+      disbursedBy?: string;
+      disbursedAt?: string;
+    } = {};
+
+    if (newStatus === 'dept_approved') {
+      extraMeta = {
+        deptApprover: currentUser.name,
+        deptApprovedAt: today,
+      };
+    } else if (newStatus === 'admin_approved' || newStatus === 'approved') {
+      extraMeta = {
+        adminApprover: currentUser.name,
+        adminApprovedAt: today,
+      };
+    } else if (newStatus === 'paid') {
+      extraMeta = {
+        disbursedBy: currentUser.name,
+        disbursedAt: today,
+      };
+    } else if (newStatus === 'rejected') {
+      extraMeta = {
+        rejectedBy: currentUser.name,
+        rejectedAt: today,
+      };
+    }
+
+    const approverName = (newStatus === 'admin_approved' || newStatus === 'approved') ? currentUser.name : target.approver;
+    const approvedAtTime = (newStatus === 'admin_approved' || newStatus === 'approved') ? today : target.approvedAt;
 
     setExpenses(prev => prev.map(item => {
       if (item.id === id) {
         return {
           ...item,
           status: newStatus,
-          rejectedReason: newStatus === 'rejected' ? rejectReason : undefined,
-          approvedBy: approverName,
+          rejectedReason: newStatus === 'rejected' ? rejectReason : (newStatus === 'submitted' ? undefined : item.rejectedReason),
+          approver: approverName,
           approvedAt: approvedAtTime,
+          ...extraMeta,
         };
       }
       return item;
     }));
 
     await triggerSaveWithFeedback('正在將審批簽核狀態寫入資料庫...', async () => {
-      await syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime);
+      await syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime, extraMeta);
     });
 
-    const statusMap = {
-      submitted: '待審核',
-      approved: '已核准',
+    const statusMap: Record<ExpenseStatus, string> = {
+      draft: '草稿',
+      submitted: '待部門審核',
+      dept_approved: '部門已審核 (待最高管理)',
+      admin_approved: '最高管理已核准 (待行政撥款)',
+      approved: '已核准 (待行政撥款)',
       rejected: '已退件駁回',
       paid: '已結案撥款',
     };
@@ -570,23 +639,51 @@ export default function App() {
   };
 
   const handleBatchStatusChange = async (ids: string[], newStatus: ExpenseStatus) => {
-    const approverName = newStatus === 'approved' ? currentUser.name : undefined;
-    const approvedAtTime = newStatus === 'approved' ? new Date().toISOString().split('T')[0] : undefined;
+    const today = new Date().toISOString().split('T')[0];
+    let extraMeta: {
+      deptApprover?: string;
+      deptApprovedAt?: string;
+      adminApprover?: string;
+      adminApprovedAt?: string;
+      disbursedBy?: string;
+      disbursedAt?: string;
+    } = {};
+
+    if (newStatus === 'dept_approved') {
+      extraMeta = {
+        deptApprover: currentUser.name,
+        deptApprovedAt: today,
+      };
+    } else if (newStatus === 'admin_approved' || newStatus === 'approved') {
+      extraMeta = {
+        adminApprover: currentUser.name,
+        adminApprovedAt: today,
+      };
+    } else if (newStatus === 'paid') {
+      extraMeta = {
+        disbursedBy: currentUser.name,
+        disbursedAt: today,
+      };
+    }
+
+    const approverName = (newStatus === 'admin_approved' || newStatus === 'approved') ? currentUser.name : undefined;
+    const approvedAtTime = (newStatus === 'admin_approved' || newStatus === 'approved') ? today : undefined;
 
     setExpenses(prev => prev.map(item => {
       if (ids.includes(item.id)) {
         return {
           ...item,
           status: newStatus,
-          approvedBy: approverName || item.approvedBy,
+          approver: approverName || item.approver,
           approvedAt: approvedAtTime || item.approvedAt,
+          ...extraMeta,
         };
       }
       return item;
     }));
 
     await triggerSaveWithFeedback(`正在批次簽核 ${ids.length} 筆單據至資料庫...`, async () => {
-      await syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime);
+      await syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime, extraMeta);
     });
     addAuditLog('審批中心', '批次簽核', `批次更新 ${ids.length} 筆單據狀態為「${newStatus}」`);
   };
@@ -1073,6 +1170,7 @@ export default function App() {
             <ApprovalWorkflowView
               expenses={expenses}
               currentUser={currentUser}
+              allUsers={users}
               projects={projects}
               companies={companies}
               categories={categories}

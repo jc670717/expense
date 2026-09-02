@@ -104,13 +104,29 @@ export async function syncUpdateExpenseStatusRemote(
   status: ExpenseStatus,
   rejectReason?: string,
   approver?: string,
-  approvedAt?: string
+  approvedAt?: string,
+  extra?: {
+    rejectedBy?: string;
+    rejectedAt?: string;
+    deptApprover?: string;
+    deptApprovedAt?: string;
+    adminApprover?: string;
+    adminApprovedAt?: string;
+    disbursedBy?: string;
+    disbursedAt?: string;
+  }
 ) {
   try {
     await fetch(`/api/expenses/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, rejectReason, approver, approvedAt })
+      body: JSON.stringify({ 
+        status, 
+        rejectReason, 
+        approver, 
+        approvedAt,
+        ...extra
+      })
     });
   } catch (err) {
     console.warn('Sync update status remote error:', err);
@@ -121,13 +137,27 @@ export async function syncBatchUpdateExpenseStatusRemote(
   ids: string[],
   status: ExpenseStatus,
   approver?: string,
-  approvedAt?: string
+  approvedAt?: string,
+  extra?: {
+    deptApprover?: string;
+    deptApprovedAt?: string;
+    adminApprover?: string;
+    adminApprovedAt?: string;
+    disbursedBy?: string;
+    disbursedAt?: string;
+  }
 ) {
   try {
     await fetch('/api/expenses/batch-status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, status, approver, approvedAt })
+      body: JSON.stringify({ 
+        ids, 
+        status, 
+        approver, 
+        approvedAt,
+        ...extra
+      })
     });
   } catch (err) {
     console.warn('Sync batch update status remote error:', err);

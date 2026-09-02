@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   AlertTriangle, 
   Calculator, 
   CheckCircle2, 
-  Upload, 
   DollarSign, 
   Info,
   Sparkles,
   ShieldAlert,
-  Trash2
+  Trash2,
+  Calendar,
+  Layers,
+  RotateCcw
 } from 'lucide-react';
 import { Company, CurrencyRate, ExpenseCategory, ExpenseItem, Project, UserPosition, UserProfile } from '../types';
 import { formatMoney } from '../utils/exportUtils';
@@ -47,6 +49,26 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
   // 使用者職位 (最高管理 | 部門管理 | 一般員工)
   const userPos: UserPosition = currentUser.position || (currentUser.role as UserPosition) || 'editor';
+  const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'auditor' || userPos === 'admin' || userPos === 'auditor';
+
+  // 1. 報支費用時，專案僅顯示「進行中」專案 (Requirement 1)
+  const activeProjects = useMemo(() => {
+    return projects.filter(p => p.status === 'active' || (p.status as string) === '進行中');
+  }, [projects]);
+
+  // 如果編輯歷史單據且該專案已結案/中止，為防破版額外補進選單並標註
+  const selectableProjects = useMemo(() => {
+    if (editingExpense && editingExpense.projectName) {
+      const existsInActive = activeProjects.some(p => p.name === editingExpense.projectName);
+      if (!existsInActive) {
+        const matched = projects.find(p => p.name === editingExpense.projectName);
+        if (matched) {
+          return [matched, ...activeProjects];
+        }
+      }
+    }
+    return activeProjects;
+  }, [activeProjects, editingExpense, projects]);
 
   // 根據職位過濾出允許該職位選取的會計科目
   const availableCategories = categories.filter(cat => {
@@ -55,22 +77,69 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     return limit ? limit.allowed : true;
   });
 
+  // 3. 請款月份下拉選項：管理者/主管顯示本月及前12個月(共13月)，一般使用者顯示本月及前2個月(共3月) (Requirement 3)
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    const monthsCount = isPrivileged ? 13 : 3; // 一般使用者：本月份及之前2個月 (3個月)；管理者：本月份及之前12個月 (13個月)
+    const list: { value: string; label: string }[] = [];
+
+    for (let i = 0; i < monthsCount; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+      const val = `${year}${monthNum}`;
+      const label = `${year}/${monthNum} (${year}年${monthNum}月)${i === 0 ? ' [當月]' : ''}`;
+      list.push({ value: val, label });
+    }
+
+    // 若正在編輯的單據月份不在當前清單內，補入選單以免無法顯示
+    if (editingExpense?.claimMonth && !list.some(m => m.value === editingExpense.claimMonth)) {
+      list.push({
+        value: editingExpense.claimMonth,
+        label: `${editingExpense.claimMonth} (歷史月份)`
+      });
+    }
+
+    return list;
+  }, [isPrivileged, editingExpense]);
+
   // 表單狀態
-  const [claimMonth, setClaimMonth] = useState(editingExpense?.claimMonth || '202608');
-  const [date, setDate] = useState(editingExpense?.date || new Date().toISOString().split('T')[0]);
-  const [applicant, setApplicant] = useState(editingExpense?.applicant || currentUser.name);
-  const [companyName, setCompanyName] = useState(editingExpense?.companyName || companies[0]?.name || '邦捷總公司');
-  const [projectName, setProjectName] = useState(editingExpense?.projectName || projects[0]?.name || '金廈(泉)票務系統暨服務採購案');
-  const [description, setDescription] = useState(editingExpense?.description || '');
-  const [categoryName, setCategoryName] = useState(
+  // Requirement 2: 點選新增費用報支時，管理者/主管預設為登入者本人 (currentUser.name)
+  const defaultApplicantName = editingExpense?.applicant || currentUser.name;
+  
+  const [claimMonth, setClaimMonth] = useState<string>(
+    editingExpense?.claimMonth || monthOptions[0]?.value || '202609'
+  );
+  const [date, setDate] = useState<string>(
+    editingExpense?.date || new Date().toISOString().split('T')[0]
+  );
+  const [applicant, setApplicant] = useState<string>(defaultApplicantName);
+  const [companyName, setCompanyName] = useState<string>(
+    editingExpense?.companyName || companies[0]?.name || '邦捷總公司'
+  );
+  const [projectName, setProjectName] = useState<string>(
+    editingExpense?.projectName || selectableProjects[0]?.name || '金廈(泉)票務系統暨服務採購案'
+  );
+  const [description, setDescription] = useState<string>(editingExpense?.description || '');
+  const [categoryName, setCategoryName] = useState<string>(
     editingExpense?.categoryName || availableCategories[0]?.name || categories[0]?.name || '住宿／車資'
   );
-  const [currency, setCurrency] = useState<'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR'>(editingExpense?.currency || 'TWD');
-  const [foreignAmount, setForeignAmount] = useState<string>(editingExpense?.foreignAmount ? String(editingExpense.foreignAmount) : '');
-  const [amount, setAmount] = useState<string>(editingExpense?.amount ? String(editingExpense.amount) : '');
-  const [invoiceNo, setInvoiceNo] = useState(editingExpense?.invoiceNo || '');
-  const [receiptStatus, setReceiptStatus] = useState<'attached' | 'missing' | 'receipt_only'>(editingExpense?.receiptStatus || 'attached');
-  const [remark, setRemark] = useState(editingExpense?.remark || '');
+  const [currency, setCurrency] = useState<string>(editingExpense?.currency || 'TWD');
+  const [foreignAmount, setForeignAmount] = useState<string>(
+    editingExpense?.foreignAmount ? String(editingExpense.foreignAmount) : ''
+  );
+  const [amount, setAmount] = useState<string>(
+    editingExpense?.amount !== undefined ? String(editingExpense.amount) : ''
+  );
+  // Requirement 4: 手續費欄位，預設為 0
+  const [fee, setFee] = useState<string>(
+    editingExpense?.fee !== undefined ? String(editingExpense.fee) : '0'
+  );
+  const [invoiceNo, setInvoiceNo] = useState<string>(editingExpense?.invoiceNo || '');
+  const [receiptStatus, setReceiptStatus] = useState<'attached' | 'missing' | 'receipt_only'>(
+    editingExpense?.receiptStatus || 'attached'
+  );
+  const [remark, setRemark] = useState<string>(editingExpense?.remark || '');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState<boolean>(false);
   
   // 防呆錯誤訊息
@@ -83,7 +152,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     .reduce((sum, e) => sum + e.amount, 0);
 
   const numAmount = parseFloat(amount) || 0;
-  const projectNewTotal = currentProjectSpent + numAmount;
+  const numFee = parseFloat(fee) || 0;
+  // Requirement 4: 合計金額不可變更，即手續費加上費用金額 (含外幣折合台幣)
+  const totalAmount = Math.round((numAmount + numFee) * 100) / 100;
+
+  const projectNewTotal = currentProjectSpent + totalAmount;
   const projectBudgetLimit = selectedProject?.budgetLimit || 0;
   const isOverBudget = projectBudgetLimit > 0 && projectNewTotal > projectBudgetLimit;
   const isNearBudget = projectBudgetLimit > 0 && !isOverBudget && (projectNewTotal / projectBudgetLimit) * 100 >= (selectedProject?.warningThreshold || 80);
@@ -109,14 +182,12 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     }
   }, [currency, foreignAmount, currencies]);
 
-  // 表單驗證防呆 (包含職位上限防呆)
+  // 表單驗證防呆
   const validate = (): boolean => {
     const err: Record<string, string> = {};
 
     if (!claimMonth.trim()) {
-      err.claimMonth = '請款月份為必填（格式如 202608）';
-    } else if (!/^\d{4}\d{2}(-?\d+)?$/.test(claimMonth.trim())) {
-      err.claimMonth = '請款月份格式不正確（例如 202608 或 202605-2）';
+      err.claimMonth = '請選擇請款月份';
     }
 
     if (!date.trim()) {
@@ -124,7 +195,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     }
 
     if (!applicant.trim()) {
-      err.applicant = '請輸入申請人姓名';
+      err.applicant = '請選擇或輸入申請人姓名';
+    }
+
+    if (!projectName.trim()) {
+      err.projectName = '請選擇進行中的歸屬專案';
     }
 
     if (!description.trim()) {
@@ -135,7 +210,12 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) {
-      err.amount = '報支費用必須為大於 0 的有效數字';
+      err.amount = '費用金額必須為大於 0 的有效數字';
+    }
+
+    const feeVal = parseFloat(fee);
+    if (isNaN(feeVal) || feeVal < 0) {
+      err.fee = '手續費不得小於 0';
     }
 
     // 職位科目上限防呆檢驗
@@ -156,11 +236,14 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     if (!validate()) return;
 
     const rateObj = currencies.find(c => c.currency === currency);
+    const applicantUser = allUsers.find(u => u.name === applicant || u.englishName === applicant);
 
     onSave({
       claimMonth: claimMonth.trim(),
       date: date.trim(),
       applicant: applicant.trim(),
+      applicantId: applicantUser?.id,
+      applicantDepartment: applicantUser?.department || currentUser.department,
       companyName,
       projectName,
       description: description.trim(),
@@ -169,6 +252,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       foreignAmount: foreignAmount ? parseFloat(foreignAmount) : undefined,
       exchangeRate: currency !== 'TWD' ? rateObj?.rateToTWD : 1.0,
       amount: parseFloat(amount),
+      fee: parseFloat(fee) || 0,
+      totalAmount: totalAmount,
       invoiceNo: invoiceNo.trim() || undefined,
       receiptStatus,
       remark: remark.trim() || undefined,
@@ -176,6 +261,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
     onClose();
   };
+
+  const isRejectedExpense = editingExpense?.status === 'rejected';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
@@ -185,13 +272,18 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-indigo-400" />
-            <h3 className="font-bold text-base">
-              {editingExpense ? '編輯公務費用報銷單' : '填報日常公務費用'}
-            </h3>
+            <div>
+              <h3 className="font-bold text-base">
+                {editingExpense ? '編輯公務費用報銷單' : '填報日常公務費用'}
+              </h3>
+              <p className="text-[11px] text-slate-300">
+                依據公司內控規範填寫，支援多幣別自動換算與三階段嚴謹審批流程
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
+            className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -199,6 +291,26 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           
+          {/* Requirement 6 提示：駁回單據重新送審說明 */}
+          {isRejectedExpense && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-amber-900 animate-in fade-in">
+              <RotateCcw className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="font-bold text-xs flex items-center gap-1.5">
+                  <span>此單據先前已被退件駁回</span>
+                  {editingExpense.rejectedReason && (
+                    <span className="font-normal text-[11px] bg-amber-200/70 text-amber-950 px-2 py-0.5 rounded">
+                      駁回原因：{editingExpense.rejectedReason}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-amber-800">
+                  💡 修正內容並點擊「儲存報支單據」後，系統將<strong>自動清除駁回原因</strong>，並自動轉為<strong>重新送審（第一階段：待部門主管審核）</strong>。
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* 專案預算即時警示條 (若超支或接近門檻) */}
           {selectedProject && (
             <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${
@@ -213,36 +325,45 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               }`} />
               <div className="space-y-0.5 flex-1">
                 <div className="font-bold flex items-center justify-between">
-                  <span>所選專案：{selectedProject.name}</span>
-                  <span>核定預算：{formatMoney(selectedProject.budgetLimit)}</span>
+                  <span>所屬專案：{selectedProject.name}</span>
+                  <span>專案核定預算：{formatMoney(selectedProject.budgetLimit)}</span>
                 </div>
                 <div className="text-[11px] opacity-90">
-                  原累計支出：{formatMoney(currentProjectSpent)} 
-                  {numAmount > 0 && ` ➔ 加上本筆後預估：${formatMoney(projectNewTotal)} (${((projectNewTotal / selectedProject.budgetLimit) * 100).toFixed(1)}%)`}
+                  專案累計已報支：{formatMoney(currentProjectSpent)} 
+                  {totalAmount > 0 && ` ➔ 加上本筆合計後預估：${formatMoney(projectNewTotal)} (${((projectNewTotal / selectedProject.budgetLimit) * 100).toFixed(1)}%)`}
                 </div>
                 {isOverBudget && (
                   <div className="text-[11px] font-bold text-rose-700">
-                    ⚠️ 警示：此筆費用將導致該專案超出合約預算上限，請審核人員特別複核！
+                    ⚠️ 警示：此筆費用將使專案超出核定預算，送出後將標註請各級主管特別複核！
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* 第一列：請款月份 + 發生日期 + 申請人 */}
+          {/* 第一列：請款月份 (下拉) + 發生日期 + 申請人姓名 (預設登入者本人) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Requirement 3: 請款月份改為下拉 */}
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">請款月份</label>
-              <input
-                type="text"
+              <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>請款月份 (年/月)</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  {isPrivileged ? '開放前12個月' : '開放前2個月'}
+                </span>
+              </label>
+              <select
                 value={claimMonth}
                 onChange={(e) => setClaimMonth(e.target.value)}
-                placeholder="例如 202608"
-                className={`w-full px-3 py-2 rounded-lg border font-mono ${
+                className={`w-full px-3 py-2 rounded-lg border font-mono font-bold text-slate-800 bg-white ${
                   errors.claimMonth ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                } outline-none focus:ring-2 focus:ring-blue-500`}
-                required
-              />
+                } outline-none focus:ring-2 focus:ring-indigo-500`}
+              >
+                {monthOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               {errors.claimMonth && <p className="text-rose-500 text-[10px] mt-1">{errors.claimMonth}</p>}
             </div>
 
@@ -254,23 +375,29 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 onChange={(e) => setDate(e.target.value)}
                 className={`w-full px-3 py-2 rounded-lg border font-mono ${
                   errors.date ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                } outline-none focus:ring-2 focus:ring-blue-500`}
+                } outline-none focus:ring-2 focus:ring-indigo-500 bg-white`}
                 required
               />
               {errors.date && <p className="text-rose-500 text-[10px] mt-1">{errors.date}</p>}
             </div>
 
+            {/* Requirement 2: 管理者與主管預設為登入者本人 */}
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">申請人姓名</label>
-              {currentUser.role !== 'editor' ? (
+              <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>申請人姓名</span>
+                <span className="text-[10px] text-indigo-600 font-normal">
+                  預設為登入者
+                </span>
+              </label>
+              {isPrivileged ? (
                 <select
                   value={applicant}
                   onChange={(e) => setApplicant(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500"
                 >
                   {allUsers.filter(u => u.status === 'active').map(u => (
-                    <option key={u.id} value={u.englishName || u.name}>
-                      {u.name} ({u.englishName || u.roleTitle})
+                    <option key={u.id} value={u.name}>
+                      {u.name} ({u.roleTitle || u.department || u.englishName})
                     </option>
                   ))}
                 </select>
@@ -282,17 +409,18 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 font-bold text-slate-800 cursor-not-allowed"
                 />
               )}
+              {errors.applicant && <p className="text-rose-500 text-[10px] mt-1">{errors.applicant}</p>}
             </div>
           </div>
 
-          {/* 第二列：公司別 + 專案名稱 */}
+          {/* 第二列：公司別 + 專案名稱 (僅顯示進行中專案) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">公司別 (法人主體)</label>
               <select
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500"
               >
                 {companies.map((c) => (
                   <option key={c.id} value={c.name}>{c.name} ({c.taxId})</option>
@@ -300,17 +428,35 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               </select>
             </div>
 
+            {/* Requirement 1: 專案非進行中不顯示在下拉選單 */}
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">專案名稱 (歸屬合約)</label>
+              <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>歸屬專案</span>
+                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.2 rounded">
+                  僅列進行中專案 ({activeProjects.length})
+                </span>
+              </label>
               <select
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800"
+                className={`w-full px-3 py-2 rounded-lg border font-bold text-slate-800 bg-white ${
+                  errors.projectName ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
+                } outline-none focus:ring-2 focus:ring-indigo-500`}
               >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.name}>{p.name} [{p.code}]</option>
-                ))}
+                {selectableProjects.length === 0 ? (
+                  <option value="">(目前無進行中專案)</option>
+                ) : (
+                  selectableProjects.map((p) => {
+                    const isInactive = p.status !== 'active' && (p.status as string) !== '進行中';
+                    return (
+                      <option key={p.id} value={p.name}>
+                        {p.name} [{p.code}] {isInactive ? ' (非進行中/歷史)' : ''}
+                      </option>
+                    );
+                  })
+                )}
               </select>
+              {errors.projectName && <p className="text-rose-500 text-[10px] mt-1">{errors.projectName}</p>}
             </div>
           </div>
 
@@ -321,10 +467,10 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="例如：高鐵車票台北至台中來回公務出差、Claude API 訂閱等"
+              placeholder="例如：高鐵車票台北至台中來回公務出差、Claude API 訂閱、小三通差旅交通等"
               className={`w-full px-3 py-2 rounded-lg border ${
                 errors.description ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-              } outline-none focus:ring-2 focus:ring-blue-500`}
+              } outline-none focus:ring-2 focus:ring-indigo-500 bg-white`}
               required
             />
             {errors.description && <p className="text-rose-500 text-[10px] mt-1">{errors.description}</p>}
@@ -345,7 +491,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             <select
               value={categoryName}
               onChange={(e) => setCategoryName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500"
             >
               {availableCategories.map((cat) => (
                 <option key={cat.id} value={cat.name}>
@@ -356,36 +502,38 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             {errors.category && <p className="text-rose-500 text-[10px] mt-1">{errors.category}</p>}
           </div>
 
-          {/* 第五列：幣別 + 外幣原金額 + 折合台幣金額 */}
+          {/* 第五列：Requirement 4 多幣別折算 + 費用金額 + 手續費 + 合計金額 */}
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                <Calculator className="w-4 h-4 text-blue-600" />
-                交易幣別與自動匯率折算
+              <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                <Calculator className="w-4 h-4 text-indigo-600" />
+                金額計算與手續費核算 (含外幣折算)
               </span>
-              <span className="text-[11px] text-slate-500">支援即時匯率換算</span>
+              <span className="text-[11px] text-slate-500">合計金額 = 費用金額 + 手續費</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">幣別</label>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              {/* 幣別 */}
+              <div className="sm:col-span-3">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">交易幣別</label>
                 <select
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 outline-none"
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {currencies.map(c => (
                     <option key={c.currency} value={c.currency}>
-                      {c.currency} ({c.name} - 匯率 {c.rateToTWD})
+                      {c.currency} ({c.name} 匯率:{c.rateToTWD})
                     </option>
                   ))}
                 </select>
               </div>
 
-              {currency !== 'TWD' && (
-                <div>
+              {/* 外幣原金額 */}
+              {currency !== 'TWD' ? (
+                <div className="sm:col-span-3">
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    外幣原金額 ({currency})
+                    原幣金額 ({currency})
                   </label>
                   <input
                     type="number"
@@ -393,28 +541,71 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                     value={foreignAmount}
                     onChange={(e) => setForeignAmount(e.target.value)}
                     placeholder="例如 10.00"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none"
+                    className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-              )}
+              ) : null}
 
-              <div className={currency === 'TWD' ? 'sm:col-span-2' : ''}>
+              {/* 費用金額 (TWD) */}
+              <div className={currency !== 'TWD' ? 'sm:col-span-3' : 'sm:col-span-4'}>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  費用金額 (折合 TWD 新台幣)
+                  費用金額 (TWD 折合)
                 </label>
                 <input
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0"
-                  className={`w-full px-3 py-2 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
+                  className={`w-full px-2.5 py-2 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
                     errors.amount ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
-                  } outline-none focus:ring-2 focus:ring-blue-500 text-sm`}
+                  } outline-none focus:ring-2 focus:ring-indigo-500`}
                   required
                 />
                 {errors.amount && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.amount}</p>}
               </div>
+
+              {/* Requirement 4: 手續費 (預設為 0) */}
+              <div className={currency !== 'TWD' ? 'sm:col-span-3' : 'sm:col-span-2'}>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  手續費 (TWD)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={fee}
+                  onChange={(e) => setFee(e.target.value)}
+                  placeholder="0"
+                  className={`w-full px-2.5 py-2 rounded-lg border font-mono font-bold text-slate-900 bg-white ${
+                    errors.fee ? 'border-rose-500 bg-rose-50/30' : 'border-slate-300'
+                  } outline-none focus:ring-2 focus:ring-indigo-500`}
+                />
+                {errors.fee && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.fee}</p>}
+              </div>
+
+              {/* Requirement 4: 合計金額 (不可變更，手續費加上費用金額) */}
+              <div className="sm:col-span-3">
+                <label className="block text-[11px] font-bold text-indigo-900 mb-1 flex items-center justify-between">
+                  <span>合計金額 (不可變更)</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded">自動加總</span>
+                </label>
+                <input
+                  type="text"
+                  value={`NT$ ${totalAmount.toLocaleString()}`}
+                  readOnly
+                  disabled
+                  className="w-full px-2.5 py-2 rounded-lg border border-indigo-200 bg-indigo-50/80 font-mono font-black text-indigo-950 text-sm cursor-not-allowed select-none"
+                />
+              </div>
             </div>
+
+            {/* 外幣換算及手續費總結資訊條 */}
+            {currency !== 'TWD' && foreignAmount && (
+              <div className="p-2 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between font-mono">
+                <span>外幣原額：{currency} {foreignAmount} ➔ 折算台幣 NT$ {numAmount.toLocaleString()}</span>
+                <span className="font-bold text-indigo-700">+ 手續費 NT$ {numFee.toLocaleString()} = 合計 NT$ {totalAmount.toLocaleString()}</span>
+              </div>
+            )}
           </div>
 
           {/* 第六列：發票號碼 + 發票狀態 + 備註 */}
@@ -426,7 +617,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 value={invoiceNo}
                 onChange={(e) => setInvoiceNo(e.target.value)}
                 placeholder="例如 AB-12345678"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono outline-none"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono outline-none bg-white focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
@@ -435,7 +626,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               <select
                 value={receiptStatus}
                 onChange={(e) => setReceiptStatus(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none font-bold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="attached">發票/收據齊全 (Attached)</option>
                 <option value="missing">⚠️ 欠發票 (Missing Receipt)</option>
@@ -449,8 +640,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 type="text"
                 value={remark}
                 onChange={(e) => setRemark(e.target.value)}
-                placeholder="如 10USD, 手續費等"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none"
+                placeholder="如 10USD、手續費、公務車ETC等"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none bg-white focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           </div>
@@ -507,7 +698,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer text-sm"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>儲存報支單據</span>
+                <span>{isRejectedExpense ? '重新送審 (送交部門審核)' : '儲存報支單據'}</span>
               </button>
             </div>
           </div>

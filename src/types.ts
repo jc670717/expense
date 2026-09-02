@@ -64,15 +64,23 @@ export interface ExpenseCategory {
   };
 }
 
-export type ExpenseStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid';
+export type ExpenseStatus = 
+  | 'draft' 
+  | 'submitted'       // 第一階段：待部門主管審核 (Submitted / Dept Pending)
+  | 'dept_approved'   // 第二階段：部門已審核 / 待最高管理審核 (Dept Approved / Admin Pending)
+  | 'admin_approved'  // 第三階段：最高管理已審核 / 待行政管理部撥款 (Admin Approved / Disbursement Pending)
+  | 'approved'        // 兼容舊資料：已核准 (視同 admin_approved)
+  | 'rejected'        // 已駁回退件 (Rejected)
+  | 'paid';           // 已撥款完成 (Paid / Disbursed)
 
 export interface ExpenseItem {
   id: string;
   itemNo: number; // 原表格項次
-  claimMonth: string; // 請款月份, e.g. 202603, 202605-2
-  date: string; // 發生日期, e.g. 3/4 或 2026-03-04
+  claimMonth: string; // 請款月份, e.g. 202603, 202608, 202609
+  date: string; // 發生日期, e.g. 2026-03-04
   applicant: string; // 申請人姓名
   applicantId?: string; // 申請人 ID
+  applicantDepartment?: string; // 申請人所屬部門
   companyName: string; // 公司別, e.g. 邦捷總公司, 馬祖分公司
   companyId?: string;
   projectName: string; // 專案名稱
@@ -80,17 +88,30 @@ export interface ExpenseItem {
   description: string; // 說明
   categoryName: string; // 科目, e.g. 住宿／車資, 雜項購置
   categoryId?: string;
-  currency: 'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR';
+  currency: 'TWD' | 'USD' | 'JPY' | 'RMB' | 'EUR' | string;
   foreignAmount?: number; // 外幣原金額
   exchangeRate?: number; // 匯率
-  amount: number; // 費用 (折合台幣 TWD)
+  amount: number; // 費用金額 (原幣/折合台幣 TWD)
+  fee?: number; // 手續費 (預設 0)
+  totalAmount?: number; // 合計金額 (費用金額 + 手續費)
   invoiceNo?: string; // 發票/收據號碼
   receiptImage?: string; // 收據影像 (base64 或 URL)
   receiptStatus?: 'attached' | 'missing' | 'receipt_only'; // 發票狀態 (如欠發票)
-  status: ExpenseStatus; // 審核狀態
+  status: ExpenseStatus; // 審核狀態 (三階段)
   approver?: string; // 審核人
   approvedAt?: string; // 審核時間
   rejectedReason?: string; // 駁回原因
+  rejectedBy?: string; // 駁回人
+  rejectedAt?: string; // 駁回時間
+  
+  // 三階段審核歷程記錄
+  deptApprover?: string; // 第一階段：部門主管審核人
+  deptApprovedAt?: string; // 第一階段：部門審核時間
+  adminApprover?: string; // 第二階段：最高管理審核人
+  adminApprovedAt?: string; // 第二階段：最高管理審核時間
+  disbursedBy?: string; // 第三階段：行政管理部撥款人
+  disbursedAt?: string; // 第三階段：行政管理部撥款時間
+
   remark?: string; // 備註 (如 10USD, 手續費, 公務車等)
   approvedBy?: string;
   createdAt: string;

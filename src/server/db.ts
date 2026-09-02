@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     date VARCHAR(20) NOT NULL,
     applicant VARCHAR(100) NOT NULL,
     applicant_id VARCHAR(50),
+    applicant_department VARCHAR(100),
     company_name VARCHAR(150),
     company_id VARCHAR(50),
     project_name VARCHAR(150),
@@ -105,6 +106,8 @@ CREATE TABLE IF NOT EXISTS expenses (
     foreign_amount NUMERIC(15, 2),
     exchange_rate NUMERIC(10, 4) DEFAULT 1,
     amount NUMERIC(15, 2) NOT NULL,
+    fee NUMERIC(15, 2) DEFAULT 0,
+    total_amount NUMERIC(15, 2) DEFAULT 0,
     invoice_no VARCHAR(100),
     receipt_image TEXT,
     receipt_status VARCHAR(50) DEFAULT 'attached',
@@ -112,10 +115,31 @@ CREATE TABLE IF NOT EXISTS expenses (
     approver VARCHAR(100),
     approved_at VARCHAR(50),
     rejected_reason TEXT,
+    rejected_by VARCHAR(100),
+    rejected_at VARCHAR(50),
+    dept_approver VARCHAR(100),
+    dept_approved_at VARCHAR(50),
+    admin_approver VARCHAR(100),
+    admin_approved_at VARCHAR(50),
+    disbursed_by VARCHAR(100),
+    disbursed_at VARCHAR(50),
     remark TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 自動升級現有資料表欄位 (Auto-migrate existing tables)
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS fee NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS total_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS applicant_department VARCHAR(100);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(100);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS rejected_at VARCHAR(50);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS dept_approver VARCHAR(100);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS dept_approved_at VARCHAR(50);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS admin_approver VARCHAR(100);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS admin_approved_at VARCHAR(50);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS disbursed_by VARCHAR(100);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS disbursed_at VARCHAR(50);
 
 -- 6. 系統操作軌跡稽核日誌 (Audit Logs)
 CREATE TABLE IF NOT EXISTS audit_logs (

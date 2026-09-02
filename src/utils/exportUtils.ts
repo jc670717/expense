@@ -5,32 +5,55 @@ import { ExpenseItem, Project } from '../types';
  * 匯出費用明細為 CSV 格式 (包含 UTF-8 BOM 避免 Excel 中文亂碼)
  */
 export function exportToCSV(expenses: ExpenseItem[], filename = '費用報支明細表.csv') {
-  const headers = ['項次', '請款月份', '日期', '申請人', '公司別', '專案', '說明', '科目', '幣別', '原幣金額', '費用(TWD)', '審核狀態', '發票狀態', '備註'];
+  const headers = [
+    '項次', '請款月份', '日期', '申請人', '所屬部門', '公司別', '專案名稱', '說明摘要', 
+    '會計科目', '幣別', '原幣金額', '費用金額(TWD)', '手續費(TWD)', '合計金額(TWD)', 
+    '審核進度', '部門審核人', '部門審核時間', '最高核准人', '最高核准時間', '行政撥款人', '行政撥款時間',
+    '發票狀態', '駁回原因', '備註'
+  ];
   
   const statusMap: Record<string, string> = {
     draft: '草稿',
-    submitted: '待審核',
-    approved: '已核准',
-    rejected: '已駁回',
-    paid: '已撥款',
+    submitted: '1.待部門審核',
+    dept_approved: '2.部門已審核(待最高管理)',
+    admin_approved: '3.最高管理已核准(待行政撥款)',
+    approved: '3.最高管理已核准(待行政撥款)',
+    paid: '已結案撥款',
+    rejected: '已退件駁回',
   };
 
-  const rows = expenses.map((exp, idx) => [
-    exp.itemNo || idx + 1,
-    exp.claimMonth,
-    exp.date,
-    exp.applicant,
-    exp.companyName,
-    exp.projectName,
-    `"${(exp.description || '').replace(/"/g, '""')}"`,
-    exp.categoryName,
-    exp.currency || 'TWD',
-    exp.foreignAmount || exp.amount,
-    exp.amount,
-    statusMap[exp.status] || exp.status,
-    exp.receiptStatus === 'missing' ? '欠發票' : '齊全',
-    `"${(exp.remark || '').replace(/"/g, '""')}"`,
-  ]);
+  const rows = expenses.map((exp, idx) => {
+    const fee = Number(exp.fee || 0);
+    const amount = Number(exp.amount || 0);
+    const total = Number(exp.totalAmount || (amount + fee));
+
+    return [
+      exp.itemNo || idx + 1,
+      exp.claimMonth,
+      exp.date,
+      exp.applicant,
+      exp.applicantDepartment || '',
+      exp.companyName,
+      exp.projectName,
+      `"${(exp.description || '').replace(/"/g, '""')}"`,
+      exp.categoryName,
+      exp.currency || 'TWD',
+      exp.foreignAmount || exp.amount,
+      amount,
+      fee,
+      total,
+      statusMap[exp.status] || exp.status,
+      exp.deptApprover || '',
+      exp.deptApprovedAt || '',
+      exp.adminApprover || exp.approver || '',
+      exp.adminApprovedAt || exp.approvedAt || '',
+      exp.disbursedBy || '',
+      exp.disbursedAt || '',
+      exp.receiptStatus === 'missing' ? '欠發票' : '齊全',
+      `"${(exp.rejectedReason || '').replace(/"/g, '""')}"`,
+      `"${(exp.remark || '').replace(/"/g, '""')}"`,
+    ];
+  });
 
   const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -56,29 +79,47 @@ export function exportToExcel(
 
   const statusMap: Record<string, string> = {
     draft: '草稿',
-    submitted: '待審核',
-    approved: '已核准',
-    rejected: '已駁回',
-    paid: '已撥款',
+    submitted: '1.待部門審核',
+    dept_approved: '2.部門已審核(待最高管理)',
+    admin_approved: '3.最高管理已核准(待行政撥款)',
+    approved: '3.最高管理已核准(待行政撥款)',
+    paid: '已結案撥款',
+    rejected: '已退件駁回',
   };
 
   // 工作表 1：費用報銷明細表
-  const detailData = expenses.map((exp, idx) => ({
-    '項次': exp.itemNo || idx + 1,
-    '請款月份': exp.claimMonth,
-    '日期': exp.date,
-    '申請人': exp.applicant,
-    '公司別': exp.companyName,
-    '專案名稱': exp.projectName,
-    '說明摘要': exp.description,
-    '會計科目': exp.categoryName,
-    '幣別': exp.currency || 'TWD',
-    '原幣金額': exp.foreignAmount || exp.amount,
-    '折合台幣(TWD)': exp.amount,
-    '審核狀態': statusMap[exp.status] || exp.status,
-    '發票狀態': exp.receiptStatus === 'missing' ? '欠發票' : '附發票/收據',
-    '備註說明': exp.remark || '',
-  }));
+  const detailData = expenses.map((exp, idx) => {
+    const fee = Number(exp.fee || 0);
+    const amount = Number(exp.amount || 0);
+    const total = Number(exp.totalAmount || (amount + fee));
+
+    return {
+      '項次': exp.itemNo || idx + 1,
+      '請款月份': exp.claimMonth,
+      '日期': exp.date,
+      '申請人': exp.applicant,
+      '所屬部門': exp.applicantDepartment || '',
+      '公司別': exp.companyName,
+      '專案名稱': exp.projectName,
+      '說明摘要': exp.description,
+      '會計科目': exp.categoryName,
+      '幣別': exp.currency || 'TWD',
+      '原幣金額': exp.foreignAmount || exp.amount,
+      '費用金額(TWD)': amount,
+      '手續費(TWD)': fee,
+      '合計金額(TWD)': total,
+      '三階審核進度': statusMap[exp.status] || exp.status,
+      '部門主管審核人': exp.deptApprover || '',
+      '部門審核時間': exp.deptApprovedAt || '',
+      '最高管理核准人': exp.adminApprover || exp.approver || '',
+      '最高核准時間': exp.adminApprovedAt || exp.approvedAt || '',
+      '行政撥款出納': exp.disbursedBy || '',
+      '撥款完成時間': exp.disbursedAt || '',
+      '發票狀態': exp.receiptStatus === 'missing' ? '欠發票' : '附發票/收據',
+      '退件駁回原因': exp.rejectedReason || '',
+      '備註說明': exp.remark || '',
+    };
+  });
 
   // 工作表 2：每月科目支出統計
   const monthMap = new Map<string, Record<string, number>>();
@@ -86,12 +127,13 @@ export function exportToExcel(
 
   expenses.forEach(exp => {
     const month = exp.claimMonth;
+    const total = Number(exp.totalAmount || (exp.amount + (exp.fee || 0)));
     if (!monthMap.has(month)) {
       monthMap.set(month, { 總計: 0 });
     }
     const record = monthMap.get(month)!;
-    record[exp.categoryName] = (record[exp.categoryName] || 0) + exp.amount;
-    record['總計'] += exp.amount;
+    record[exp.categoryName] = (record[exp.categoryName] || 0) + total;
+    record['總計'] += total;
   });
 
   const summaryData = Array.from(monthMap.entries())
