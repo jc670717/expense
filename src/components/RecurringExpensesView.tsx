@@ -41,6 +41,20 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
 }) => {
   const safeTemplates = Array.isArray(templates) ? templates.filter(t => t && typeof t === 'object' && t.id) : [];
   
+  const monthOptions = React.useMemo(() => {
+    const now = new Date();
+    const list: { value: string; label: string }[] = [];
+    for (let i = 0; i < 2; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+      const val = `${year}${monthNum}`;
+      const label = `${year}/${monthNum}${i === 0 ? ' [當月]' : ''}`;
+      list.push({ value: val, label });
+    }
+    return list;
+  }, []);
+
   const [generateMonth, setGenerateMonth] = useState<string>(() => {
     const now = new Date();
     const y = now.getFullYear();
@@ -199,13 +213,15 @@ export const RecurringExpensesView: React.FC<RecurringExpensesViewProps> = ({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-700">目標請款月份：</span>
-              <input
-                type="text"
+              <select
                 value={generateMonth}
                 onChange={(e) => setGenerateMonth(e.target.value)}
-                placeholder="例如 202609"
-                className="px-3 py-1.5 rounded-xl border border-slate-300 font-mono font-bold text-xs w-28 focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+                className="px-3 py-1.5 rounded-xl border border-slate-300 font-mono font-bold text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                {monthOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
 
             <button

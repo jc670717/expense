@@ -119,7 +119,11 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
       return true;
     }).sort((a, b) => {
       let cmp = 0;
-      if (sortField === 'amount') cmp = a.amount - b.amount;
+      if (sortField === 'amount') {
+        const totalA = a.totalAmount !== undefined ? a.totalAmount : (a.amount + (a.fee || 0));
+        const totalB = b.totalAmount !== undefined ? b.totalAmount : (b.amount + (b.fee || 0));
+        cmp = totalA - totalB;
+      }
       else if (sortField === 'itemNo') cmp = a.itemNo - b.itemNo;
       else cmp = a.date.localeCompare(b.date);
       return sortAsc ? cmp : -cmp;
@@ -138,9 +142,12 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
     sortAsc,
   ]);
 
-  // 當前篩選總金額與統計
+  // 當前篩選總金額與統計（以含手續費之合計金額為主）
   const filteredTotal = useMemo(() => {
-    return filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+    return filteredExpenses.reduce((sum, item) => {
+      const itemTotal = item.totalAmount !== undefined ? item.totalAmount : (item.amount + (item.fee || 0));
+      return sum + itemTotal;
+    }, 0);
   }, [filteredExpenses]);
 
   // 最高管理者無修改刪除及批次限制
@@ -380,7 +387,7 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
           <div className="flex items-center gap-2 text-xs font-semibold">
             <span className="bg-blue-600 px-2 py-0.5 rounded-full text-white">已選 {selectedIds.length} 筆</span>
             <span className="text-slate-300">
-              (合計：<strong className="text-emerald-400 font-mono">{formatMoney(filteredExpenses.filter(e => selectedIds.includes(e.id)).reduce((s, i) => s + i.amount, 0))}</strong>)
+              (合計：<strong className="text-emerald-400 font-mono">{formatMoney(filteredExpenses.filter(e => selectedIds.includes(e.id)).reduce((s, i) => s + (i.totalAmount !== undefined ? i.totalAmount : (i.amount + (i.fee || 0))), 0))}</strong>)
             </span>
           </div>
           
@@ -489,7 +496,7 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                 <th className="p-3 w-48">專案名稱</th>
                 <th className="p-3 min-w-[200px]">說明摘要</th>
                 <th className="p-3 w-24">科目</th>
-                <th className="p-3 w-28 text-right">費用 (TWD)</th>
+                <th className="p-3 w-32 text-right">合計費用 (TWD)</th>
                 <th className="p-3 w-24 text-center">狀態</th>
                 <th className="p-3 w-32">備註 / 外幣</th>
                 <th className="p-3 w-28 text-center">操作</th>
@@ -596,9 +603,16 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 費用 */}
-                      <td className="p-3 text-right whitespace-nowrap font-mono font-bold text-slate-900">
-                        {formatMoney(item.amount)}
+                      {/* 費用（以含手續費的合計為主） */}
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="font-mono font-bold text-slate-900 text-xs">
+                          {formatMoney(item.totalAmount !== undefined ? item.totalAmount : (item.amount + (item.fee || 0)))}
+                        </div>
+                        {item.fee && item.fee > 0 ? (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5" title={`報支金額: NT$ ${item.amount.toLocaleString()} + 手續費: NT$ ${item.fee.toLocaleString()}`}>
+                            (含手續費 ${Number(item.fee).toLocaleString()})
+                          </div>
+                        ) : null}
                       </td>
 
                       {/* 審核狀態 */}
@@ -722,8 +736,17 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
                   <span className="font-medium text-slate-900 truncate max-w-[200px]">{deletingExpenseItem.description}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-slate-200">
-                  <span className="text-slate-500 font-bold">報銷金額：</span>
-                  <span className="font-bold text-rose-600 font-mono text-sm">{formatMoney(deletingExpenseItem.amount)}</span>
+                  <span className="text-slate-500 font-bold">合計報銷金額：</span>
+                  <div className="text-right">
+                    <span className="font-bold text-rose-600 font-mono text-sm">
+                      {formatMoney(deletingExpenseItem.totalAmount !== undefined ? deletingExpenseItem.totalAmount : (deletingExpenseItem.amount + (deletingExpenseItem.fee || 0)))}
+                    </span>
+                    {deletingExpenseItem.fee && deletingExpenseItem.fee > 0 ? (
+                      <span className="text-[10px] text-slate-400 block font-mono">
+                        (報支 ${deletingExpenseItem.amount.toLocaleString()} + 手續費 ${deletingExpenseItem.fee.toLocaleString()})
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -782,7 +805,7 @@ export const ExpenseListView: React.FC<ExpenseListViewProps> = ({
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center">
                 <span className="font-semibold text-slate-700">選取項目合計金額：</span>
                 <span className="font-mono font-bold text-rose-600 text-base">
-                  {formatMoney(filteredExpenses.filter(e => selectedIds.includes(e.id)).reduce((s, i) => s + i.amount, 0))}
+                  {formatMoney(filteredExpenses.filter(e => selectedIds.includes(e.id)).reduce((s, i) => s + (i.totalAmount !== undefined ? i.totalAmount : (i.amount + (i.fee || 0))), 0))}
                 </span>
               </div>
             </div>

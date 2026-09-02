@@ -78,10 +78,10 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     return limit ? limit.allowed : true;
   });
 
-  // 3. 請款月份下拉選項：管理者/主管顯示本月及前12個月(共13月)，一般使用者顯示本月及前2個月(共3月) (Requirement 3)
+  // 請款月份下拉選項：最多只顯示2個月，含當月 (當月及前1個月，共 2 個月)
   const monthOptions = useMemo(() => {
     const now = new Date();
-    const monthsCount = isPrivileged ? 13 : 3; // 一般使用者：本月份及之前2個月 (3個月)；管理者：本月份及之前12個月 (13個月)
+    const monthsCount = 2; // 最多只顯示2個月，含當月
     const list: { value: string; label: string }[] = [];
 
     for (let i = 0; i < monthsCount; i++) {
@@ -102,7 +102,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     }
 
     return list;
-  }, [isPrivileged, editingExpense]);
+  }, [editingExpense]);
 
   // Requirement 7: 只要一但簽核過，不管哪一階段，就不能再修改刪除，除非是駁回，最高管理無此限制
   const isSuperAdmin = currentUser.role === 'admin' || currentUser.position === 'admin';

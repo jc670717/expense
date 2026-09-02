@@ -32,9 +32,26 @@ export const ReceiptScannerView: React.FC<ReceiptScannerViewProps> = ({
   onBatchImportExpenses,
   setActiveTab,
 }) => {
+  const monthOptions = React.useMemo(() => {
+    const now = new Date();
+    const list: { value: string; label: string }[] = [];
+    for (let i = 0; i < 2; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+      const val = `${year}${monthNum}`;
+      const label = `${year}/${monthNum}${i === 0 ? ' [當月]' : ''}`;
+      list.push({ value: val, label });
+    }
+    return list;
+  }, []);
+
   const [ocrList, setOcrList] = useState<OcrResult[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [targetMonth, setTargetMonth] = useState<string>('202608');
+  const [targetMonth, setTargetMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [targetProject, setTargetProject] = useState<string>(projects[0]?.name || '金廈(泉)票務系統暨服務採購案');
 
   // 處理自訂上傳檔案
@@ -195,12 +212,15 @@ export const ReceiptScannerView: React.FC<ReceiptScannerViewProps> = ({
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <div>
                 <label className="text-[11px] text-slate-400 block mb-0.5">匯入月份</label>
-                <input
-                  type="text"
+                <select
                   value={targetMonth}
                   onChange={(e) => setTargetMonth(e.target.value)}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 font-mono font-bold w-24"
-                />
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 font-mono font-bold text-xs bg-slate-50 outline-none"
+                >
+                  {monthOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

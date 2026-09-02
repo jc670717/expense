@@ -546,7 +546,7 @@ export default function App() {
       const newItem: ExpenseItem = {
         id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         itemNo: expenses.length + 1,
-        claimMonth: expenseData.claimMonth || '202608',
+        claimMonth: expenseData.claimMonth || `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`,
         date: expenseData.date || new Date().toISOString().split('T')[0],
         companyName: expenseData.companyName || '邦捷總公司',
         projectName: expenseData.projectName || '金廈(泉)票務系統暨服務採購案',
