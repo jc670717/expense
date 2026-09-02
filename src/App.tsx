@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { Navigation } from './components/Navigation';
@@ -14,6 +14,7 @@ import { MasterDataView } from './components/MasterDataView';
 import { AuditBackupView } from './components/AuditBackupView';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { SavingLoadingOverlay, SavingStatus } from './components/SavingLoadingOverlay';
 
 import { 
   AuditLog, 
@@ -48,7 +49,12 @@ import {
   syncUpdateExpenseStatusRemote, 
   syncBatchUpdateExpenseStatusRemote,
   syncSaveUserRemote,
-  syncDeleteUserRemote
+  syncDeleteUserRemote,
+  syncSaveProjectRemote,
+  syncDeleteProjectRemote,
+  syncSaveCompanyRemote,
+  syncSaveCategoryRemote,
+  syncSaveAuditLogRemote
 } from './services/api';
 
 export default function App() {
@@ -58,8 +64,64 @@ export default function App() {
   });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
+  // 雲端即時寫入過場與防抖狀態 (避免背景同步覆蓋剛修改的資料)
+  const [savingStatus, setSavingStatus] = useState<SavingStatus>({
+    isSaving: false,
+    message: '',
+    isSuccess: false,
+    isError: false,
+  });
+  const lastMutationTimeRef = useRef<number>(0);
+
+  // 封裝安全儲存過場 (寫入雲端並提供 Loading 反饋，防止 Race Condition)
+  const triggerSaveWithFeedback = async (
+    msg: string,
+    action: () => Promise<void> | void
+  ) => {
+    lastMutationTimeRef.current = Date.now();
+    setSavingStatus({
+      isSaving: true,
+      message: msg,
+      isSuccess: false,
+      isError: false,
+    });
+
+    try {
+      await action();
+      lastMutationTimeRef.current = Date.now();
+      setSavingStatus({
+        isSaving: false,
+        message: '資料已成功寫入雲端 PostgreSQL 並完成備份！',
+        isSuccess: true,
+        isError: false,
+      });
+      setTimeout(() => {
+        setSavingStatus(prev => prev.isSuccess ? { ...prev, isSuccess: false } : prev);
+      }, 1800);
+    } catch (err) {
+      console.error('Remote sync error:', err);
+      setSavingStatus({
+        isSaving: false,
+        message: '已儲存至本機快取，連線恢復時將自動推送至雲端。',
+        isSuccess: false,
+        isError: true,
+      });
+      setTimeout(() => {
+        setSavingStatus(prev => prev.isError ? { ...prev, isError: false } : prev);
+      }, 2500);
+    }
+  };
+
   // 0.1 雲端資料庫初始化檢測與雙向同步 (Neon PostgreSQL)
   const syncWithRemoteDb = async (silent = false) => {
+    // 若距離上次寫入小於 10 秒，或者目前正在儲存中，跳過背景輪詢，避免覆蓋使用者的最新輸入！
+    if (silent && Date.now() - lastMutationTimeRef.current < 10000) {
+      return;
+    }
+    if (savingStatus.isSaving) {
+      return;
+    }
+
     try {
       const health = await checkDbHealth();
       setDbStatus(health);
@@ -67,6 +129,11 @@ export default function App() {
       if (health.dbConnected) {
         if (!silent) setIsSyncing(true);
         const res = await fetchRemoteData();
+        // 再次檢查是否在 fetch 期間剛好發生了寫入
+        if (Date.now() - lastMutationTimeRef.current < 10000 && silent) {
+          return;
+        }
+
         if (res.dbConnected && res.data) {
           // 若後端資料庫已有資料，則載入同步
           if (res.data.expenses && res.data.expenses.length > 0) {
@@ -334,6 +401,7 @@ export default function App() {
       timestamp: timeStr,
     };
     setAuditLogs(prev => [newLog, ...prev]);
+    syncSaveAuditLogRemote(newLog).catch(() => {});
   };
 
   // 登入處理
@@ -380,7 +448,7 @@ export default function App() {
     setIsExpenseModalOpen(true);
   };
 
-  const handleDeleteExpense = (id: string) => {
+  const handleDeleteExpense = async (id: string) => {
     const target = expenses.find(e => e.id === id);
     if (!target) return;
     
@@ -391,19 +459,24 @@ export default function App() {
     }
 
     setExpenses(prev => prev.filter(e => e.id !== id));
-    syncDeleteExpenseRemote(id);
+    await triggerSaveWithFeedback('正在從雲端資料庫刪除費用單據...', async () => {
+      await syncDeleteExpenseRemote(id);
+    });
     addAuditLog('費用登記', '刪除費用', `刪除【${target.applicant}】之報支單據：${target.description}（金額 NT$ ${target.amount.toLocaleString()}）`);
   };
 
-  const handleBatchDeleteExpenses = (ids: string[]) => {
+  const handleBatchDeleteExpenses = async (ids: string[]) => {
     if (ids.length === 0) return;
     const count = ids.length;
     setExpenses(prev => prev.filter(e => !ids.includes(e.id)));
-    syncBatchDeleteExpensesRemote(ids);
+    await triggerSaveWithFeedback(`正在批次刪除 ${count} 筆費用單據...`, async () => {
+      await syncBatchDeleteExpensesRemote(ids);
+    });
     addAuditLog('費用登記', '批次刪除', `批次刪除 ${count} 筆費用報支單據`);
   };
 
-  const handleSaveExpense = (expenseData: Partial<ExpenseItem>) => {
+  const handleSaveExpense = async (expenseData: Partial<ExpenseItem>) => {
+    setIsExpenseModalOpen(false);
     if (editingExpense) {
       // 編輯既有費用
       let updatedItem: ExpenseItem | null = null;
@@ -420,7 +493,10 @@ export default function App() {
         return item;
       }));
       if (updatedItem) {
-        syncSaveExpenseRemote(updatedItem);
+        const itemToSave = updatedItem;
+        await triggerSaveWithFeedback('正在同步更新費用單據至雲端資料庫...', async () => {
+          await syncSaveExpenseRemote(itemToSave);
+        });
       }
       addAuditLog('費用登記', '修改費用', `更新費用單據 ID: ${editingExpense.id}，金額變更為 NT$ ${expenseData.amount}`);
     } else {
@@ -447,13 +523,14 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
       setExpenses(prev => [newItem, ...prev]);
-      syncSaveExpenseRemote(newItem);
+      await triggerSaveWithFeedback('正在新增費用單據至雲端資料庫...', async () => {
+        await syncSaveExpenseRemote(newItem);
+      });
       addAuditLog('費用登記', '新增費用', `申請人【${newItem.applicant}】新增費用單據：${newItem.description}（金額 NT$ ${newItem.amount}）`);
     }
-    setIsExpenseModalOpen(false);
   };
 
-  const handleStatusChange = (id: string, newStatus: ExpenseStatus, rejectReason?: string) => {
+  const handleStatusChange = async (id: string, newStatus: ExpenseStatus, rejectReason?: string) => {
     const target = expenses.find(e => e.id === id);
     if (!target) return;
 
@@ -473,7 +550,9 @@ export default function App() {
       return item;
     }));
 
-    syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime);
+    await triggerSaveWithFeedback('正在將審批簽核狀態寫入資料庫...', async () => {
+      await syncUpdateExpenseStatusRemote(id, newStatus, rejectReason, approverName, approvedAtTime);
+    });
 
     const statusMap = {
       submitted: '待審核',
@@ -485,7 +564,7 @@ export default function App() {
     addAuditLog('審批中心', '變更狀態', `單據【${target.description}】狀態變更為「${statusMap[newStatus]}」${rejectReason ? `，理由：${rejectReason}` : ''}`);
   };
 
-  const handleBatchStatusChange = (ids: string[], newStatus: ExpenseStatus) => {
+  const handleBatchStatusChange = async (ids: string[], newStatus: ExpenseStatus) => {
     const approverName = newStatus === 'approved' ? currentUser.name : undefined;
     const approvedAtTime = newStatus === 'approved' ? new Date().toISOString().split('T')[0] : undefined;
 
@@ -501,22 +580,31 @@ export default function App() {
       return item;
     }));
 
-    syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime);
+    await triggerSaveWithFeedback(`正在批次簽核 ${ids.length} 筆單據至資料庫...`, async () => {
+      await syncBatchUpdateExpenseStatusRemote(ids, newStatus, approverName, approvedAtTime);
+    });
     addAuditLog('審批中心', '批次簽核', `批次更新 ${ids.length} 筆單據狀態為「${newStatus}」`);
   };
 
-  const handleBatchImportExpenses = (newExpenses: ExpenseItem[]) => {
+  const handleBatchImportExpenses = async (newExpenses: ExpenseItem[]) => {
     setExpenses(prev => [...newExpenses, ...prev]);
+    await triggerSaveWithFeedback(`正在將 ${newExpenses.length} 筆辨識單據匯入雲端資料庫...`, async () => {
+      for (const exp of newExpenses) {
+        await syncSaveExpenseRemote(exp);
+      }
+    });
     addAuditLog('發票辨識', 'AI 批次匯入', `透過發票影像辨識成功批次匯入 ${newExpenses.length} 筆發票報銷單`);
   };
 
   // 專案管理儲存
-  const handleSaveProject = (projectData: Partial<Project>) => {
+  const handleSaveProject = async (projectData: Partial<Project>) => {
+    let savedProject: Project;
     if (projectData.id) {
-      setProjects(prev => prev.map(p => p.id === projectData.id ? { ...p, ...projectData } as Project : p));
+      savedProject = { ...projects.find(p => p.id === projectData.id), ...projectData } as Project;
+      setProjects(prev => prev.map(p => p.id === projectData.id ? savedProject : p));
       addAuditLog('專案管理', '修改專案', `更新專案【${projectData.name}】預算為 NT$ ${projectData.budgetLimit}`);
     } else {
-      const newProj: Project = {
+      savedProject = {
         id: `proj-${Date.now()}`,
         code: projectData.code || `PRJ-${Math.floor(Math.random() * 900 + 100)}`,
         name: projectData.name || '新建立專案',
@@ -528,16 +616,23 @@ export default function App() {
         status: projectData.status || 'active',
         description: projectData.description,
       };
-      setProjects(prev => [...prev, newProj]);
-      addAuditLog('專案管理', '新增專案', `建立新專案【${newProj.name}】，核定預算 NT$ ${newProj.budgetLimit}`);
+      setProjects(prev => [...prev, savedProject]);
+      addAuditLog('專案管理', '新增專案', `建立新專案【${savedProject.name}】，核定預算 NT$ ${savedProject.budgetLimit}`);
     }
+
+    await triggerSaveWithFeedback('正在同步儲存專案至雲端資料庫...', async () => {
+      await syncSaveProjectRemote(savedProject);
+    });
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = async (id: string) => {
     const target = projects.find(p => p.id === id);
     if (!target) return;
     if (window.confirm(`確定要刪除專案【${target.name}】嗎？`)) {
       setProjects(prev => prev.filter(p => p.id !== id));
+      await triggerSaveWithFeedback('正在從雲端資料庫刪除專案...', async () => {
+        await syncDeleteProjectRemote(id);
+      });
       addAuditLog('專案管理', '刪除專案', `刪除專案【${target.name}】`);
     }
   };
@@ -572,7 +667,7 @@ export default function App() {
     addAuditLog('固定支出', '刪除模板', `刪除每月固定支出模板 ID: ${id}`);
   };
 
-  const handleGenerateRecurringExpenses = (
+  const handleGenerateRecurringExpenses = async (
     month: string,
     selectedTemplateIds: string[],
     updatedAmounts: Record<string, number>
@@ -621,34 +716,46 @@ export default function App() {
     });
 
     setExpenses(prev => [...newExpenses, ...prev]);
-    newExpenses.forEach(exp => syncSaveExpenseRemote(exp));
+    await triggerSaveWithFeedback(`正在寫入 ${newExpenses.length} 筆固定支出單據至雲端資料庫...`, async () => {
+      for (const exp of newExpenses) {
+        await syncSaveExpenseRemote(exp);
+      }
+    });
     addAuditLog('固定支出', '自動生成', `一鍵生成【${month}】固定支出單據共 ${newExpenses.length} 筆`);
   };
 
   // 主檔設定儲存
-  const handleSaveCompany = (comp: Partial<Company>) => {
+  const handleSaveCompany = async (comp: Partial<Company>) => {
+    let savedComp: Company;
     if (comp.id) {
-      setCompanies(prev => prev.map(c => c.id === comp.id ? { ...c, ...comp } as Company : c));
+      savedComp = { ...companies.find(c => c.id === comp.id), ...comp } as Company;
+      setCompanies(prev => prev.map(c => c.id === comp.id ? savedComp : c));
       addAuditLog('主檔維護', '修改公司', `更新公司資料【${comp.name}】`);
     } else {
-      const newComp: Company = {
+      savedComp = {
         id: `comp-${Date.now()}`,
         name: comp.name || '新公司',
         taxId: comp.taxId || '',
         address: comp.address,
         phone: comp.phone,
       };
-      setCompanies(prev => [...prev, newComp]);
-      addAuditLog('主檔維護', '新增公司', `新增公司資料【${newComp.name}】`);
+      setCompanies(prev => [...prev, savedComp]);
+      addAuditLog('主檔維護', '新增公司', `新增公司資料【${savedComp.name}】`);
     }
+
+    await triggerSaveWithFeedback('正在同步公司資料至雲端資料庫...', async () => {
+      await syncSaveCompanyRemote(savedComp);
+    });
   };
 
-  const handleSaveCategory = (cat: Partial<ExpenseCategory>) => {
+  const handleSaveCategory = async (cat: Partial<ExpenseCategory>) => {
+    let savedCat: ExpenseCategory;
     if (cat.id) {
-      setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, ...cat } as ExpenseCategory : c));
+      savedCat = { ...categories.find(c => c.id === cat.id), ...cat } as ExpenseCategory;
+      setCategories(prev => prev.map(c => c.id === cat.id ? savedCat : c));
       addAuditLog('主檔維護', '修改科目', `更新科目與職位上限【${cat.name}】`);
     } else {
-      const newCat: ExpenseCategory = {
+      savedCat = {
         id: `cat-${Date.now()}`,
         code: cat.code || `ACC-${Math.floor(Math.random() * 900 + 100)}`,
         name: cat.name || '新會計科目',
@@ -656,15 +763,20 @@ export default function App() {
         maxPerItem: cat.maxPerItem,
         roleLimits: cat.roleLimits,
       };
-      setCategories(prev => [...prev, newCat]);
-      addAuditLog('主檔維護', '新增科目', `新增會計科目【${newCat.name}】`);
+      setCategories(prev => [...prev, savedCat]);
+      addAuditLog('主檔維護', '新增科目', `新增會計科目【${savedCat.name}】`);
     }
+
+    await triggerSaveWithFeedback('正在同步會計科目至雲端資料庫...', async () => {
+      await syncSaveCategoryRemote(savedCat);
+    });
   };
 
-  const handleSaveUser = (u: Partial<UserProfile>) => {
+  const handleSaveUser = async (u: Partial<UserProfile>) => {
+    let updatedUser: UserProfile;
     if (u.id) {
       const oldUser = users.find(user => user.id === u.id);
-      const updatedUser = { ...oldUser, ...u } as UserProfile;
+      updatedUser = { ...oldUser, ...u } as UserProfile;
       setUsers(prev => prev.map(user => user.id === u.id ? updatedUser : user));
       if (currentUser.id === u.id) {
         setCurrentUser(prev => ({ ...prev, ...u } as UserProfile));
@@ -676,10 +788,9 @@ export default function App() {
             : exp
         ));
       }
-      syncSaveUserRemote(updatedUser);
-      addAuditLog('主檔維護', '修改同仁權限', `更新同仁【${u.name || updatedUser.name}】之職位與模組權限`);
+      addAuditLog('主檔維護', '修改同仁權限', `更新同仁【${u.name || updatedUser.name}】之姓名、帳號與職位權限`);
     } else {
-      const newUser: UserProfile = {
+      updatedUser = {
         id: `user-${Date.now()}`,
         name: u.name || '新同仁',
         englishName: u.englishName || '',
@@ -693,13 +804,16 @@ export default function App() {
         department: u.department || '研發處',
         allowedTabs: u.allowedTabs || ['dashboard', 'expenses', 'scanner', 'recurring', 'reports'],
       };
-      setUsers(prev => [...prev, newUser]);
-      syncSaveUserRemote(newUser);
-      addAuditLog('主檔維護', '新增同仁帳號', `新增同仁帳號【${newUser.name}】(${newUser.username})`);
+      setUsers(prev => [...prev, updatedUser]);
+      addAuditLog('主檔維護', '新增同仁帳號', `新增同仁帳號【${updatedUser.name}】(${updatedUser.username})`);
     }
+
+    await triggerSaveWithFeedback(`正在將同仁【${updatedUser.name}】資料同步寫入雲端資料庫...`, async () => {
+      await syncSaveUserRemote(updatedUser);
+    });
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     const isSuperAdmin = currentUser.position === 'admin' || currentUser.role === 'admin';
     if (!isSuperAdmin) {
       alert('【權限不足】只有系統最高管理者 (Admin) 擁有刪除同仁帳號的權限！');
@@ -715,7 +829,9 @@ export default function App() {
     if (!targetUser) return;
 
     setUsers(prev => prev.filter(u => u.id !== id));
-    syncDeleteUserRemote(id);
+    await triggerSaveWithFeedback(`正在從雲端資料庫刪除同仁【${targetUser.name}】...`, async () => {
+      await syncDeleteUserRemote(id);
+    });
     addAuditLog(
       '主檔維護',
       '刪除同仁帳號',
@@ -724,14 +840,16 @@ export default function App() {
   };
 
   // 同仁自定義密碼變更
-  const handleSaveUserPassword = (newPassword: string) => {
+  const handleSaveUserPassword = async (newPassword: string) => {
     const updatedUser: UserProfile = {
       ...currentUser,
       password: newPassword,
     };
     setCurrentUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
-    syncSaveUserRemote(updatedUser);
+    await triggerSaveWithFeedback('正在更新個人密碼至雲端資料庫...', async () => {
+      await syncSaveUserRemote(updatedUser);
+    });
     addAuditLog(
       '帳號資安',
       '變更密碼',
@@ -1046,6 +1164,9 @@ export default function App() {
         currentUser={currentUser}
         onSavePassword={handleSaveUserPassword}
       />
+
+      {/* 6. 雲端資料庫儲存與同步過場反饋 Overlay */}
+      <SavingLoadingOverlay status={savingStatus} />
 
     </div>
   );

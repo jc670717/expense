@@ -125,23 +125,117 @@ export async function syncBatchUpdateExpenseStatusRemote(
 }
 
 // 同仁/使用者異動同步
-export async function syncSaveUserRemote(user: UserProfile) {
+export async function syncSaveUserRemote(user: UserProfile): Promise<boolean> {
   try {
-    await fetch('/api/users', {
+    const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(user)
     });
+    return res.ok;
   } catch (err) {
     console.warn('Sync save user remote error:', err);
+    return false;
   }
 }
 
-export async function syncDeleteUserRemote(id: string) {
+export async function syncDeleteUserRemote(id: string): Promise<boolean> {
   try {
-    await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+    return res.ok;
   } catch (err) {
     console.warn('Sync delete user remote error:', err);
+    return false;
+  }
+}
+
+// 專案異動同步
+export async function syncSaveProjectRemote(project: Project): Promise<boolean> {
+  try {
+    const res = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save project remote error:', err);
+    return false;
+  }
+}
+
+export async function syncDeleteProjectRemote(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync delete project remote error:', err);
+    return false;
+  }
+}
+
+// 公司別異動同步
+export async function syncSaveCompanyRemote(company: Company): Promise<boolean> {
+  try {
+    const res = await fetch('/api/companies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(company)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save company remote error:', err);
+    return false;
+  }
+}
+
+export async function syncDeleteCompanyRemote(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync delete company remote error:', err);
+    return false;
+  }
+}
+
+// 會計科目異動同步
+export async function syncSaveCategoryRemote(category: ExpenseCategory): Promise<boolean> {
+  try {
+    const res = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(category)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save category remote error:', err);
+    return false;
+  }
+}
+
+export async function syncDeleteCategoryRemote(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync delete category remote error:', err);
+    return false;
+  }
+}
+
+// 稽核日誌同步
+export async function syncSaveAuditLogRemote(log: AuditLog): Promise<boolean> {
+  try {
+    const res = await fetch('/api/audit-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(log)
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Sync save audit log remote error:', err);
+    return false;
   }
 }
 

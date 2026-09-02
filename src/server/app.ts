@@ -397,5 +397,126 @@ export function createExpressApp() {
     }
   });
 
+  // 5. 專案操作 API
+  app.post('/api/projects', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const p = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO projects (id, code, name, company_id, manager, manager_id, start_date, status, budget_limit, warning_threshold, description)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (id) DO UPDATE SET
+           code = EXCLUDED.code, name = EXCLUDED.name, company_id = EXCLUDED.company_id,
+           manager = EXCLUDED.manager, manager_id = EXCLUDED.manager_id, start_date = EXCLUDED.start_date,
+           status = EXCLUDED.status, budget_limit = EXCLUDED.budget_limit,
+           warning_threshold = EXCLUDED.warning_threshold, description = EXCLUDED.description`,
+        [p.id, p.code, p.name, p.companyId || null, p.manager, p.managerId || null, p.startDate, p.status || 'active', p.budgetLimit || 0, p.warningThreshold || 80, p.description || '']
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/projects/:id', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 6. 公司別操作 API
+  app.post('/api/companies', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const c = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO companies (id, name, tax_id, address, phone, is_default)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, tax_id = EXCLUDED.tax_id, address = EXCLUDED.address,
+           phone = EXCLUDED.phone, is_default = EXCLUDED.is_default`,
+        [c.id, c.name, c.taxId || '', c.address || '', c.phone || '', c.isDefault || false]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/companies/:id', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 7. 會計科目操作 API
+  app.post('/api/categories', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const cat = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO categories (id, name, code, icon, description, max_per_item, role_limits)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name, code = EXCLUDED.code, icon = EXCLUDED.icon,
+           description = EXCLUDED.description, max_per_item = EXCLUDED.max_per_item,
+           role_limits = EXCLUDED.role_limits`,
+        [cat.id, cat.name, cat.code || '', cat.icon || '', cat.description || '', cat.maxPerItem || 0, JSON.stringify(cat.roleLimits || {})]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/categories/:id', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    try {
+      await pool.query('DELETE FROM categories WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 8. 稽核日誌 API
+  app.post('/api/audit-logs', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const l = req.body;
+    try {
+      await pool.query(
+        `INSERT INTO audit_logs (id, timestamp, user_id, user_name, user_role, action, module, target_type, target_id, details)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (id) DO NOTHING`,
+        [l.id, l.timestamp, l.userId, l.userName, l.userRole, l.action, l.module, l.targetType || null, l.targetId || null, l.details]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return app;
 }
