@@ -132,22 +132,50 @@ export default function App() {
   // 1. 本地狀態與持久化
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_EXPENSES');
-    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+    if (!saved) return INITIAL_EXPENSES;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter(item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.description === 'string');
+        return valid.length > 0 ? valid : INITIAL_EXPENSES;
+      }
+      return INITIAL_EXPENSES;
+    } catch {
+      return INITIAL_EXPENSES;
+    }
   });
 
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_PROJECTS');
-    return saved ? JSON.parse(saved) : INITIAL_PROJECTS;
+    if (!saved) return INITIAL_PROJECTS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_PROJECTS;
+    } catch {
+      return INITIAL_PROJECTS;
+    }
   });
 
   const [categories, setCategories] = useState<ExpenseCategory[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_CATEGORIES');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    if (!saved) return INITIAL_CATEGORIES;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_CATEGORIES;
+    } catch {
+      return INITIAL_CATEGORIES;
+    }
   });
 
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_COMPANIES');
-    return saved ? JSON.parse(saved) : INITIAL_COMPANIES;
+    if (!saved) return INITIAL_COMPANIES;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_COMPANIES;
+    } catch {
+      return INITIAL_COMPANIES;
+    }
   });
 
   const [users, setUsers] = useState<UserProfile[]>(() => {
@@ -186,12 +214,28 @@ export default function App() {
 
   const [currencies, setCurrencies] = useState<CurrencyRate[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_CURRENCIES');
-    return saved ? JSON.parse(saved) : INITIAL_CURRENCIES;
+    if (!saved) return INITIAL_CURRENCIES;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_CURRENCIES;
+    } catch {
+      return INITIAL_CURRENCIES;
+    }
   });
 
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringExpenseTemplate[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_RECURRING');
-    return saved ? JSON.parse(saved) : INITIAL_RECURRING_TEMPLATES;
+    if (!saved) return INITIAL_RECURRING_TEMPLATES;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter(t => t && typeof t === 'object' && typeof t.id === 'string');
+        return valid.length > 0 ? valid : INITIAL_RECURRING_TEMPLATES;
+      }
+      return INITIAL_RECURRING_TEMPLATES;
+    } catch {
+      return INITIAL_RECURRING_TEMPLATES;
+    }
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -513,15 +557,28 @@ export default function App() {
   };
 
   // 固定支出模板處理
-  const handleSaveRecurringTemplate = (template: RecurringExpenseTemplate) => {
+  const handleSaveRecurringTemplate = (template: Partial<RecurringExpenseTemplate>) => {
     setRecurringTemplates(prev => {
       const exists = prev.some(t => t.id === template.id);
       if (exists) {
-        return prev.map(t => t.id === template.id ? template : t);
+        return prev.map(t => t.id === template.id ? { ...t, ...template } as RecurringExpenseTemplate : t);
       }
-      return [...prev, template];
+      const newTmpl: RecurringExpenseTemplate = {
+        id: template.id || `rec-${Date.now()}`,
+        name: template.name || '固定支出模版',
+        companyName: template.companyName || '邦捷總公司',
+        projectName: template.projectName || '邦捷公司費用報銷',
+        categoryName: template.categoryName || '雜項購置',
+        applicant: template.applicant || currentUser.name,
+        description: template.description || '',
+        defaultCurrency: template.defaultCurrency || 'TWD',
+        defaultAmount: Number(template.defaultAmount) || 300,
+        remark: template.remark,
+        active: true,
+      };
+      return [...prev, newTmpl];
     });
-    addAuditLog('固定支出', '維護模板', `儲存每月固定支出模板【${template.description}】`);
+    addAuditLog('固定支出', '維護模板', `儲存每月固定支出模板【${template.name || template.description}】`);
   };
 
   const handleDeleteRecurringTemplate = (id: string) => {
@@ -529,9 +586,57 @@ export default function App() {
     addAuditLog('固定支出', '刪除模板', `刪除每月固定支出模板 ID: ${id}`);
   };
 
-  const handleGenerateRecurringExpenses = (generated: ExpenseItem[]) => {
-    setExpenses(prev => [...generated, ...prev]);
-    addAuditLog('固定支出', '自動生成', `一鍵生成當月例行性固定支出共 ${generated.length} 筆`);
+  const handleGenerateRecurringExpenses = (
+    month: string,
+    selectedTemplateIds: string[],
+    updatedAmounts: Record<string, number>
+  ) => {
+    const templatesToGenerate = recurringTemplates.filter(t => selectedTemplateIds.includes(t.id));
+    if (templatesToGenerate.length === 0) return;
+
+    const newExpenses: ExpenseItem[] = templatesToGenerate.map((tmpl, idx) => {
+      const rawAmount = updatedAmounts[tmpl.id] !== undefined ? updatedAmounts[tmpl.id] : tmpl.defaultAmount;
+      const currency = tmpl.defaultCurrency || 'TWD';
+      const currRateObj = currencies.find(c => c.currency === currency);
+      const exchangeRate = currRateObj ? currRateObj.rateToTWD : 1.0;
+      const finalAmount = currency === 'TWD' ? rawAmount : Math.round(rawAmount * exchangeRate);
+
+      const targetCompany = companies.find(c => c.name === tmpl.companyName);
+      const targetProject = projects.find(p => p.name === tmpl.projectName);
+      const targetCategory = categories.find(c => c.name === tmpl.categoryName);
+
+      const y = month.length >= 4 ? month.slice(0, 4) : '2026';
+      const m = month.length >= 6 ? month.slice(4, 6) : '09';
+
+      return {
+        id: `exp-rec-${Date.now()}-${idx}`,
+        itemNo: expenses.length + idx + 1,
+        claimMonth: month,
+        date: `${y}-${m}-01`,
+        applicant: tmpl.applicant || currentUser.name,
+        applicantId: currentUser.id,
+        companyName: tmpl.companyName || '邦捷總公司',
+        companyId: targetCompany?.id || 'comp-1',
+        projectName: tmpl.projectName || '邦捷公司費用報銷',
+        projectId: targetProject?.id || 'proj-1',
+        description: `【例行固定支出】${tmpl.description}`,
+        categoryName: tmpl.categoryName || '雜項購置',
+        categoryId: targetCategory?.id || 'cat-1',
+        currency: currency,
+        foreignAmount: currency !== 'TWD' ? rawAmount : undefined,
+        exchangeRate: exchangeRate,
+        amount: finalAmount,
+        invoiceNo: undefined,
+        receiptStatus: 'not_required',
+        status: 'submitted',
+        remark: tmpl.remark || '系統一鍵批次生成固定費用',
+        createdAt: new Date().toISOString(),
+      };
+    });
+
+    setExpenses(prev => [...newExpenses, ...prev]);
+    newExpenses.forEach(exp => syncSaveExpenseRemote(exp));
+    addAuditLog('固定支出', '自動生成', `一鍵生成【${month}】固定支出單據共 ${newExpenses.length} 筆`);
   };
 
   // 主檔設定儲存
