@@ -1,18 +1,28 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
+import pg from 'pg';
 import dotenv from 'dotenv';
 dotenv.config();
 
-let pool: Pool | null = null;
+const { Pool } = pg;
+
+let pool: pg.Pool | null = null;
 let currentConnStr: string | null = null;
 
-export function getDbPool(): Pool | null {
+export function getDbPool(): pg.Pool | null {
   const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!connectionString) {
     return null;
   }
   if (!pool || currentConnStr !== connectionString) {
     currentConnStr = connectionString;
-    pool = new Pool({ connectionString });
+    pool = new Pool({
+      connectionString,
+      ssl: {
+        rejectUnauthorized: false
+      },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000
+    });
   }
   return pool;
 }
