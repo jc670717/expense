@@ -44,6 +44,7 @@ import {
   fetchRemoteData, 
   pushAllDataToRemote, 
   syncSaveExpenseRemote, 
+  syncBatchSaveExpensesRemote,
   syncDeleteExpenseRemote, 
   syncBatchDeleteExpensesRemote, 
   syncUpdateExpenseStatusRemote, 
@@ -163,6 +164,14 @@ export default function App() {
             setAuditLogs(res.data.auditLogs);
             localStorage.setItem('EXPENSE_APP_AUDIT_LOGS', JSON.stringify(res.data.auditLogs));
           }
+          if (res.data.recurringTemplates && res.data.recurringTemplates.length > 0) {
+            setRecurringTemplates(res.data.recurringTemplates);
+            localStorage.setItem('EXPENSE_APP_RECURRING', JSON.stringify(res.data.recurringTemplates));
+          }
+          if (res.data.currencies && res.data.currencies.length > 0) {
+            setCurrencies(res.data.currencies);
+            localStorage.setItem('EXPENSE_APP_CURRENCIES', JSON.stringify(res.data.currencies));
+          }
         }
       }
     } catch (e) {
@@ -190,7 +199,9 @@ export default function App() {
       projects,
       categories,
       companies,
-      auditLogs
+      auditLogs,
+      currencies,
+      recurringTemplates
     });
     setIsSyncing(false);
     if (success) {
@@ -770,11 +781,15 @@ export default function App() {
   };
 
   // 固定支出模板處理
-  const handleSaveRecurringTemplate = (template: Partial<RecurringExpenseTemplate>) => {
+  const handleSaveRecurringTemplate = async (template: Partial<RecurringExpenseTemplate>) => {
+    let savedTmpl: RecurringExpenseTemplate;
     setRecurringTemplates(prev => {
       const exists = prev.some(t => t.id === template.id);
       if (exists) {
-        return prev.map(t => t.id === template.id ? { ...t, ...template } as RecurringExpenseTemplate : t);
+        const next = prev.map(t => t.id === template.id ? { ...t, ...template } as RecurringExpenseTemplate : t);
+        savedTmpl = next.find(t => t.id === template.id)!;
+        localStorage.setItem('EXPENSE_APP_RECURRING', JSON.stringify(next));
+        return next;
       }
       const newTmpl: RecurringExpenseTemplate = {
         id: template.id || `rec-${Date.now()}`,
@@ -789,13 +804,29 @@ export default function App() {
         remark: template.remark,
         active: true,
       };
-      return [...prev, newTmpl];
+      savedTmpl = newTmpl;
+      const next = [...prev, newTmpl];
+      localStorage.setItem('EXPENSE_APP_RECURRING', JSON.stringify(next));
+      return next;
+    });
+
+    await triggerSaveWithFeedback(`正在將固定支出模版【${template.name || template.description || '新模版'}】同步至雲端資料庫...`, async () => {
+      if (savedTmpl) {
+        await syncSaveRecurringTemplateRemote(savedTmpl);
+      }
     });
     addAuditLog('固定支出', '維護模板', `儲存每月固定支出模板【${template.name || template.description}】`);
   };
 
-  const handleDeleteRecurringTemplate = (id: string) => {
-    setRecurringTemplates(prev => prev.filter(t => t.id !== id));
+  const handleDeleteRecurringTemplate = async (id: string) => {
+    setRecurringTemplates(prev => {
+      const next = prev.filter(t => t.id !== id);
+      localStorage.setItem('EXPENSE_APP_RECURRING', JSON.stringify(next));
+      return next;
+    });
+    await triggerSaveWithFeedback('正在從雲端資料庫刪除固定支出模版...', async () => {
+      await syncDeleteRecurringTemplateRemote(id);
+    });
     addAuditLog('固定支出', '刪除模板', `刪除每月固定支出模板 ID: ${id}`);
   };
 
@@ -822,12 +853,13 @@ export default function App() {
       const m = month.length >= 6 ? month.slice(4, 6) : '09';
 
       return {
-        id: `exp-rec-${Date.now()}-${idx}`,
+        id: `exp-rec-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
         itemNo: expenses.length + idx + 1,
         claimMonth: month,
         date: `${y}-${m}-01`,
         applicant: tmpl.applicant || currentUser.name,
         applicantId: currentUser.id,
+        applicantDepartment: currentUser.department || '研發部',
         companyName: tmpl.companyName || '邦捷總公司',
         companyId: targetCompany?.id || 'comp-1',
         projectName: tmpl.projectName || '邦捷公司費用報銷',
@@ -839,6 +871,8 @@ export default function App() {
         foreignAmount: currency !== 'TWD' ? rawAmount : undefined,
         exchangeRate: exchangeRate,
         amount: finalAmount,
+        fee: 0,
+        totalAmount: finalAmount,
         invoiceNo: undefined,
         receiptStatus: 'not_required',
         status: 'submitted',
@@ -847,11 +881,14 @@ export default function App() {
       };
     });
 
-    setExpenses(prev => [...newExpenses, ...prev]);
-    await triggerSaveWithFeedback(`正在寫入 ${newExpenses.length} 筆固定支出單據至雲端資料庫...`, async () => {
-      for (const exp of newExpenses) {
-        await syncSaveExpenseRemote(exp);
-      }
+    setExpenses(prev => {
+      const nextList = [...newExpenses, ...prev];
+      localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+      return nextList;
+    });
+
+    await triggerSaveWithFeedback(`正在將 ${newExpenses.length} 筆固定支出單據寫入雲端資料庫...`, async () => {
+      await syncBatchSaveExpensesRemote(newExpenses);
     });
     addAuditLog('固定支出', '自動生成', `一鍵生成【${month}】固定支出單據共 ${newExpenses.length} 筆`);
   };

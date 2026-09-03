@@ -19,6 +19,8 @@ export interface SyncResponse {
     categories: ExpenseCategory[];
     companies: Company[];
     auditLogs: AuditLog[];
+    currencies?: CurrencyRate[];
+    recurringTemplates?: RecurringExpenseTemplate[];
   } | null;
 }
 
@@ -53,6 +55,8 @@ export async function pushAllDataToRemote(payload: {
   categories: ExpenseCategory[];
   companies: Company[];
   auditLogs: AuditLog[];
+  currencies?: CurrencyRate[];
+  recurringTemplates?: RecurringExpenseTemplate[];
 }): Promise<boolean> {
   try {
     const res = await fetch('/api/sync/push-all', {
@@ -76,6 +80,18 @@ export async function syncSaveExpenseRemote(expense: ExpenseItem) {
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || `HTTP ${res.status}: Failed to save expense`);
+  }
+}
+
+export async function syncBatchSaveExpensesRemote(expenses: ExpenseItem[]) {
+  const res = await fetch('/api/expenses/batch-save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expenses })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: Failed to batch save expenses`);
   }
 }
 

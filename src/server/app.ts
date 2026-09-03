@@ -384,76 +384,137 @@ export function createExpressApp() {
   });
 
   // 3. 單筆/批次費用操作 API
-  app.post('/api/expenses', async (req, res) => {
-    const pool = getDbPool();
-    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
-
-    const e = req.body;
+  const saveSingleExpense = async (clientOrPool: any, e: any) => {
     const numAmount = Number(e.amount || 0);
     const numFee = Number(e.fee || 0);
     const numTotal = Number(e.totalAmount || (numAmount + numFee));
 
+    await clientOrPool.query(
+      `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, applicant_department, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, fee, total_amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, rejected_by, rejected_at, dept_approver, dept_approved_at, admin_approver, admin_approved_at, disbursed_by, disbursed_at, remark)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+       ON CONFLICT (id) DO UPDATE SET
+         claim_month = EXCLUDED.claim_month, date = EXCLUDED.date, applicant = EXCLUDED.applicant,
+         applicant_id = EXCLUDED.applicant_id, applicant_department = EXCLUDED.applicant_department,
+         company_name = EXCLUDED.company_name, company_id = EXCLUDED.company_id,
+         project_name = EXCLUDED.project_name, project_id = EXCLUDED.project_id,
+         category_name = EXCLUDED.category_name, category_id = EXCLUDED.category_id,
+         description = EXCLUDED.description, amount = EXCLUDED.amount, fee = EXCLUDED.fee, total_amount = EXCLUDED.total_amount, currency = EXCLUDED.currency,
+         foreign_amount = EXCLUDED.foreign_amount, exchange_rate = EXCLUDED.exchange_rate,
+         invoice_no = EXCLUDED.invoice_no, receipt_image = EXCLUDED.receipt_image, receipt_status = EXCLUDED.receipt_status,
+         status = EXCLUDED.status, approver = EXCLUDED.approver, approved_at = EXCLUDED.approved_at,
+         rejected_reason = EXCLUDED.rejected_reason, rejected_by = EXCLUDED.rejected_by, rejected_at = EXCLUDED.rejected_at,
+         dept_approver = EXCLUDED.dept_approver, dept_approved_at = EXCLUDED.dept_approved_at,
+         admin_approver = EXCLUDED.admin_approver, admin_approved_at = EXCLUDED.admin_approved_at,
+         disbursed_by = EXCLUDED.disbursed_by, disbursed_at = EXCLUDED.disbursed_at,
+         remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
+      [
+        e.id, 
+        e.itemNo || 1, 
+        e.claimMonth || '', 
+        e.date || '', 
+        e.applicant || '', 
+        e.applicantId || null, 
+        e.applicantDepartment || null,
+        e.companyName || '', 
+        e.companyId || null, 
+        e.projectName || '', 
+        e.projectId || null, 
+        e.description || '', 
+        e.categoryName || '', 
+        e.categoryId || null,
+        e.currency || 'TWD', 
+        e.foreignAmount || null, 
+        e.exchangeRate || 1, 
+        numAmount, 
+        numFee, 
+        numTotal,
+        e.invoiceNo || null, 
+        e.receiptImage || null, 
+        e.receiptStatus || 'attached', 
+        e.status || 'submitted', 
+        e.approver || null, 
+        e.approvedAt || null,
+        e.rejectedReason || null, 
+        e.rejectedBy || null, 
+        e.rejectedAt || null,
+        e.deptApprover || null, 
+        e.deptApprovedAt || null,
+        e.adminApprover || null, 
+        e.adminApprovedAt || null,
+        e.disbursedBy || null, 
+        e.disbursedAt || null,
+        e.remark || null
+      ]
+    );
+  };
+
+  app.post('/api/expenses', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const payload = req.body;
     try {
-      await pool.query(
-        `INSERT INTO expenses (id, item_no, claim_month, date, applicant, applicant_id, applicant_department, company_name, company_id, project_name, project_id, description, category_name, category_id, currency, foreign_amount, exchange_rate, amount, fee, total_amount, invoice_no, receipt_image, receipt_status, status, approver, approved_at, rejected_reason, rejected_by, rejected_at, dept_approver, dept_approved_at, admin_approver, admin_approved_at, disbursed_by, disbursed_at, remark)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
-         ON CONFLICT (id) DO UPDATE SET
-           claim_month = EXCLUDED.claim_month, date = EXCLUDED.date, applicant = EXCLUDED.applicant,
-           applicant_id = EXCLUDED.applicant_id, applicant_department = EXCLUDED.applicant_department,
-           company_name = EXCLUDED.company_name, company_id = EXCLUDED.company_id,
-           project_name = EXCLUDED.project_name, project_id = EXCLUDED.project_id,
-           category_name = EXCLUDED.category_name, category_id = EXCLUDED.category_id,
-           description = EXCLUDED.description, amount = EXCLUDED.amount, fee = EXCLUDED.fee, total_amount = EXCLUDED.total_amount, currency = EXCLUDED.currency,
-           foreign_amount = EXCLUDED.foreign_amount, exchange_rate = EXCLUDED.exchange_rate,
-           invoice_no = EXCLUDED.invoice_no, receipt_image = EXCLUDED.receipt_image, receipt_status = EXCLUDED.receipt_status,
-           status = EXCLUDED.status, approver = EXCLUDED.approver, approved_at = EXCLUDED.approved_at,
-           rejected_reason = EXCLUDED.rejected_reason, rejected_by = EXCLUDED.rejected_by, rejected_at = EXCLUDED.rejected_at,
-           dept_approver = EXCLUDED.dept_approver, dept_approved_at = EXCLUDED.dept_approved_at,
-           admin_approver = EXCLUDED.admin_approver, admin_approved_at = EXCLUDED.admin_approved_at,
-           disbursed_by = EXCLUDED.disbursed_by, disbursed_at = EXCLUDED.disbursed_at,
-           remark = EXCLUDED.remark, updated_at = CURRENT_TIMESTAMP`,
-        [
-          e.id, 
-          e.itemNo || 1, 
-          e.claimMonth || '', 
-          e.date || '', 
-          e.applicant || '', 
-          e.applicantId || null, 
-          e.applicantDepartment || null,
-          e.companyName || '', 
-          e.companyId || null, 
-          e.projectName || '', 
-          e.projectId || null, 
-          e.description || '', 
-          e.categoryName || '', 
-          e.categoryId || null,
-          e.currency || 'TWD', 
-          e.foreignAmount || null, 
-          e.exchangeRate || 1, 
-          numAmount, 
-          numFee, 
-          numTotal,
-          e.invoiceNo || null, 
-          e.receiptImage || null, 
-          e.receiptStatus || 'attached', 
-          e.status || 'submitted', 
-          e.approver || null, 
-          e.approvedAt || null,
-          e.rejectedReason || null, 
-          e.rejectedBy || null, 
-          e.rejectedAt || null,
-          e.deptApprover || null, 
-          e.deptApprovedAt || null,
-          e.adminApprover || null, 
-          e.adminApprovedAt || null,
-          e.disbursedBy || null, 
-          e.disbursedAt || null,
-          e.remark || null
-        ]
-      );
+      if (Array.isArray(payload)) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          for (const item of payload) {
+            await saveSingleExpense(client, item);
+          }
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK');
+          throw e;
+        } finally {
+          client.release();
+        }
+      } else if (payload && Array.isArray(payload.expenses)) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          for (const item of payload.expenses) {
+            await saveSingleExpense(client, item);
+          }
+          await client.query('COMMIT');
+        } catch (e) {
+          await client.query('ROLLBACK');
+          throw e;
+        } finally {
+          client.release();
+        }
+      } else {
+        await saveSingleExpense(pool, payload);
+      }
       res.json({ success: true });
     } catch (err: any) {
+      console.error('Error saving expense(s):', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/expenses/batch-save', async (req, res) => {
+    const pool = getDbPool();
+    if (!pool) return res.status(200).json({ success: true, mode: 'local' });
+
+    const items = Array.isArray(req.body) ? req.body : (req.body?.expenses || []);
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of items) {
+        await saveSingleExpense(client, item);
+      }
+      await client.query('COMMIT');
+      res.json({ success: true, count: items.length });
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      console.error('Error in batch save expenses:', err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
     }
   });
 
