@@ -149,6 +149,7 @@ export function createExpressApp() {
             icon: c.icon,
             description: c.description,
             maxPerItem: Number(c.max_per_item),
+            excludeFromRemittance: Boolean(c.exclude_from_remittance),
             roleLimits: typeof c.role_limits === 'string' ? JSON.parse(c.role_limits) : (c.role_limits || {})
           })),
           companies: companiesRes.rows.map(co => ({
@@ -256,10 +257,10 @@ export function createExpressApp() {
       if (Array.isArray(categories) && categories.length > 0) {
         for (const cat of categories) {
           await client.query(
-            `INSERT INTO categories (id, name, code, icon, description, max_per_item, role_limits)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code, icon = EXCLUDED.icon, description = EXCLUDED.description, max_per_item = EXCLUDED.max_per_item, role_limits = EXCLUDED.role_limits`,
-            [cat.id, cat.name, cat.code, cat.icon, cat.description, cat.maxPerItem, JSON.stringify(cat.roleLimits || {})]
+            `INSERT INTO categories (id, name, code, icon, description, max_per_item, role_limits, exclude_from_remittance)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code, icon = EXCLUDED.icon, description = EXCLUDED.description, max_per_item = EXCLUDED.max_per_item, role_limits = EXCLUDED.role_limits, exclude_from_remittance = EXCLUDED.exclude_from_remittance`,
+            [cat.id, cat.name, cat.code, cat.icon, cat.description, cat.maxPerItem, JSON.stringify(cat.roleLimits || {}), Boolean(cat.excludeFromRemittance)]
           );
         }
       }
@@ -770,13 +771,13 @@ export function createExpressApp() {
     const cat = req.body;
     try {
       await pool.query(
-        `INSERT INTO categories (id, name, code, icon, description, max_per_item, role_limits)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO categories (id, name, code, icon, description, max_per_item, role_limits, exclude_from_remittance)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name, code = EXCLUDED.code, icon = EXCLUDED.icon,
            description = EXCLUDED.description, max_per_item = EXCLUDED.max_per_item,
-           role_limits = EXCLUDED.role_limits`,
-        [cat.id, cat.name, cat.code || '', cat.icon || '', cat.description || '', cat.maxPerItem || 0, JSON.stringify(cat.roleLimits || {})]
+           role_limits = EXCLUDED.role_limits, exclude_from_remittance = EXCLUDED.exclude_from_remittance`,
+        [cat.id, cat.name, cat.code || '', cat.icon || '', cat.description || '', cat.maxPerItem || 0, JSON.stringify(cat.roleLimits || {}), Boolean(cat.excludeFromRemittance)]
       );
       res.json({ success: true });
     } catch (err: any) {

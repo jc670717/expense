@@ -56,6 +56,7 @@ export interface ExpenseCategory {
   icon?: string;
   description?: string;
   maxPerItem?: number; // 全局預設單筆上限建議
+  excludeFromRemittance?: boolean; // 是否不列入匯款明細 (例如公司內部自付或免匯款項目)
   // 依職位設定報支限制與不同上限
   roleLimits?: {
     admin: RoleCategoryLimit;   // 最高管理

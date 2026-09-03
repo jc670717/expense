@@ -8,8 +8,6 @@ import {
   PieChart as PieChartIcon, 
   PlusCircle, 
   FileCheck2, 
-  Scan, 
-  Calendar,
   Layers,
   Sparkles
 } from 'lucide-react';
@@ -155,7 +153,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-xl">
               {currentUser.role === 'editor' 
-                ? '您目前處於「普通編輯者」檢視模式，可快速填報公務費用、上傳收據識別及管理個人每月固定支出。'
+                ? '您目前處於「普通編輯者」檢視模式，可快速填報公務費用及查詢報支進度。'
                 : '即時掌握企業各專案支出狀況、多幣別報支統計與預算超支警示。'}
             </p>
           </div>
@@ -169,22 +167,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             >
               <PlusCircle className="w-4 h-4" />
               快速新增報支
-            </button>
-            <button
-              id="dashboard-scan-receipt-btn"
-              onClick={() => setActiveTab('scanner')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium backdrop-blur-sm border border-white/15 transition-colors"
-            >
-              <Scan className="w-4 h-4 text-blue-300" />
-              發票/收據 AI 識別
-            </button>
-            <button
-              id="dashboard-recurring-btn"
-              onClick={() => setActiveTab('recurring')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium backdrop-blur-sm border border-white/15 transition-colors"
-            >
-              <Calendar className="w-4 h-4 text-emerald-300" />
-              每月固定支出建立
             </button>
           </div>
         </div>

@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS categories (
     description TEXT,
     max_per_item NUMERIC(15, 2) DEFAULT 0,
     role_limits JSONB DEFAULT '{}',
+    exclude_from_remittance BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -140,6 +141,7 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS admin_approver VARCHAR(100);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS admin_approved_at VARCHAR(50);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS disbursed_by VARCHAR(100);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS disbursed_at VARCHAR(50);
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS exclude_from_remittance BOOLEAN DEFAULT FALSE;
 
 -- 6. 系統操作軌跡稽核日誌 (Audit Logs)
 CREATE TABLE IF NOT EXISTS audit_logs (

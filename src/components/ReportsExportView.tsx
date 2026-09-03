@@ -124,25 +124,49 @@ export const ReportsExportView: React.FC<ReportsExportViewProps> = ({
       .sort((a, b) => b.total - a.total);
   }, [scopedExpenses, projects, totalAmount]);
 
-  // 4. 同仁統計
+  // 4. 同仁統計 (包含未列匯款、已列匯款與累計金額)
   const applicantData = useMemo(() => {
-    const map = new Map<string, { total: number; count: number }>();
+    // 建立科目匯款排除狀態對照表
+    const excludedCatMap = new Map<string, boolean>();
+    categories.forEach(c => {
+      if (c.excludeFromRemittance) {
+        if (c.id) excludedCatMap.set(c.id, true);
+        if (c.name) excludedCatMap.set(c.name, true);
+      }
+    });
+
+    const map = new Map<string, { 
+      total: number; 
+      count: number;
+      excludedAmount: number;
+      includedAmount: number;
+    }>();
+
     scopedExpenses.forEach(exp => {
-      const curr = map.get(exp.applicant) || { total: 0, count: 0 };
+      const isExcluded = Boolean(
+        (exp.categoryId && excludedCatMap.get(exp.categoryId)) ||
+        (exp.categoryName && excludedCatMap.get(exp.categoryName))
+      );
+      const curr = map.get(exp.applicant) || { total: 0, count: 0, excludedAmount: 0, includedAmount: 0 };
+      const amt = Number(exp.amount || 0);
+
       map.set(exp.applicant, {
-        total: curr.total + exp.amount,
+        total: curr.total + amt,
         count: curr.count + 1,
+        excludedAmount: curr.excludedAmount + (isExcluded ? amt : 0),
+        includedAmount: curr.includedAmount + (!isExcluded ? amt : 0),
       });
     });
+
     return Array.from(map.entries())
       .map(([applicant, data]) => ({
         applicant,
         ...data,
-        average: Math.round(data.total / data.count),
+        average: data.count > 0 ? Math.round(data.total / data.count) : 0,
         percentage: totalAmount > 0 ? ((data.total / totalAmount) * 100).toFixed(1) : '0',
       }))
       .sort((a, b) => b.total - a.total);
-  }, [scopedExpenses, totalAmount]);
+  }, [scopedExpenses, categories, totalAmount]);
 
   const handleExportFullExcel = () => {
     exportToExcel(scopedExpenses, `企業費用報銷總表_${selectedMonth}.xlsx`);
@@ -404,7 +428,9 @@ export const ReportsExportView: React.FC<ReportsExportViewProps> = ({
                   <th className="p-3.5">名次</th>
                   <th className="p-3.5">申請人姓名</th>
                   <th className="p-3.5 text-center">報銷單據筆數</th>
-                  <th className="p-3.5 text-right">累計金額 (TWD)</th>
+                  <th className="p-3.5 text-right text-amber-700 bg-amber-50/50">未列匯款金額 (TWD)</th>
+                  <th className="p-3.5 text-right text-blue-700 bg-blue-50/50">已列匯款金額 (TWD)</th>
+                  <th className="p-3.5 text-right font-bold text-slate-900">累計金額 (加總)</th>
                   <th className="p-3.5 text-right">平均單筆金額</th>
                   <th className="p-3.5 text-right">佔比</th>
                 </tr>
@@ -415,12 +441,37 @@ export const ReportsExportView: React.FC<ReportsExportViewProps> = ({
                     <td className="p-3.5 font-bold font-mono text-slate-400">#{idx + 1}</td>
                     <td className="p-3.5 font-bold text-slate-900">{user.applicant}</td>
                     <td className="p-3.5 text-center text-slate-700">{user.count} 筆</td>
-                    <td className="p-3.5 text-right font-mono font-bold text-slate-900">{formatMoney(user.total)}</td>
+                    <td className="p-3.5 text-right font-mono font-semibold text-amber-700 bg-amber-50/30">
+                      {formatMoney(user.excludedAmount)}
+                    </td>
+                    <td className="p-3.5 text-right font-mono font-semibold text-blue-700 bg-blue-50/30">
+                      {formatMoney(user.includedAmount)}
+                    </td>
+                    <td className="p-3.5 text-right font-mono font-bold text-slate-900">
+                      {formatMoney(user.total)}
+                    </td>
                     <td className="p-3.5 text-right font-mono text-slate-600">{formatMoney(user.average)}</td>
                     <td className="p-3.5 text-right font-bold text-slate-700">{user.percentage}%</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="bg-slate-100 text-slate-800 font-bold border-t-2 border-slate-300">
+                <tr>
+                  <td colSpan={2} className="p-3.5">全體統計加總</td>
+                  <td className="p-3.5 text-center">{applicantData.reduce((s, u) => s + u.count, 0)} 筆</td>
+                  <td className="p-3.5 text-right font-mono text-amber-800">
+                    {formatMoney(applicantData.reduce((s, u) => s + u.excludedAmount, 0))}
+                  </td>
+                  <td className="p-3.5 text-right font-mono text-blue-800">
+                    {formatMoney(applicantData.reduce((s, u) => s + u.includedAmount, 0))}
+                  </td>
+                  <td className="p-3.5 text-right font-mono text-slate-900">
+                    {formatMoney(applicantData.reduce((s, u) => s + u.total, 0))}
+                  </td>
+                  <td className="p-3.5 text-right font-mono text-slate-600">-</td>
+                  <td className="p-3.5 text-right">100.0%</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

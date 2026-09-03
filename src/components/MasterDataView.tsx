@@ -197,6 +197,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   const [catName, setCatName] = useState('');
   const [catDesc, setCatDesc] = useState('');
   const [catMax, setCatMax] = useState<number>(0);
+  const [catExcludeFromRemittance, setCatExcludeFromRemittance] = useState(false);
   // 各職位報支與上限設定
   const [adminAllowed, setAdminAllowed] = useState(true);
   const [adminMaxLimit, setAdminMaxLimit] = useState<number>(0);
@@ -246,6 +247,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       name: catName.trim(),
       description: catDesc.trim(),
       maxPerItem: catMax > 0 ? catMax : undefined,
+      excludeFromRemittance: catExcludeFromRemittance,
       roleLimits: {
         admin: { allowed: adminAllowed, maxLimit: adminMaxLimit },
         auditor: { allowed: auditorAllowed, maxLimit: auditorMaxLimit },
@@ -454,6 +456,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 setCatName('');
                 setCatDesc('');
                 setCatMax(0);
+                setCatExcludeFromRemittance(false);
                 setAdminAllowed(true);
                 setAdminMaxLimit(0);
                 setAuditorAllowed(true);
@@ -475,6 +478,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 <tr>
                   <th className="p-3">科目代碼</th>
                   <th className="p-3">科目名稱</th>
+                  <th className="p-3">匯款屬性</th>
                   <th className="p-3">最高管理 (Admin) 上限</th>
                   <th className="p-3">部門管理 (Auditor) 上限</th>
                   <th className="p-3">一般員工 (Editor) 上限</th>
@@ -493,6 +497,19 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       <td className="p-3 font-mono text-slate-500">{cat.code}</td>
                       <td className="p-3 font-bold text-slate-900">{cat.name}</td>
                       
+                      {/* 匯款屬性 */}
+                      <td className="p-3">
+                        {cat.excludeFromRemittance ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            🚫 不列入匯款
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
+                            ✓ 列入匯款
+                          </span>
+                        )}
+                      </td>
+
                       {/* 最高管理 */}
                       <td className="p-3">
                         {adminLim?.allowed !== false ? (
@@ -540,6 +557,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                             setCatName(cat.name);
                             setCatDesc(cat.description || '');
                             setCatMax(cat.maxPerItem || 0);
+                            setCatExcludeFromRemittance(Boolean(cat.excludeFromRemittance));
                             setAdminAllowed(cat.roleLimits?.admin?.allowed ?? true);
                             setAdminMaxLimit(cat.roleLimits?.admin?.maxLimit || 0);
                             setAuditorAllowed(cat.roleLimits?.auditor?.allowed ?? true);
@@ -1071,6 +1089,25 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   rows={2}
                   className="w-full p-2 rounded-lg border"
                 />
+              </div>
+
+              {/* 不列入匯款明細設定 */}
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="cat-exclude-remittance"
+                  checked={catExcludeFromRemittance}
+                  onChange={(e) => setCatExcludeFromRemittance(e.target.checked)}
+                  className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="cat-exclude-remittance" className="cursor-pointer select-none">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    不列入匯款明細
+                  </span>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                    勾選後，凡選取此會計科目的報銷單據，金額將歸類為「未列匯款金額」，不會產生匯款支出紀錄，僅作為內部帳務核銷與費用統計。
+                  </p>
+                </label>
               </div>
 
               {/* 職位報支與個別金額上限設定 */}
