@@ -222,16 +222,15 @@ export default function App() {
   // 1. 本地狀態與持久化
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
     const saved = localStorage.getItem('EXPENSE_APP_EXPENSES');
-    if (!saved) return INITIAL_EXPENSES;
+    if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        const valid = parsed.filter(item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.description === 'string');
-        return valid.length > 0 ? valid : INITIAL_EXPENSES;
+        return parsed.filter(item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.description === 'string');
       }
-      return INITIAL_EXPENSES;
+      return [];
     } catch {
-      return INITIAL_EXPENSES;
+      return [];
     }
   });
 
