@@ -8,8 +8,7 @@ import {
   Eye, 
   EyeOff, 
   CheckCircle2, 
-  AlertCircle,
-  RotateCcw
+  AlertCircle
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -19,7 +18,7 @@ interface LoginScreenProps {
   onResetUsers?: () => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin, onResetUsers }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -95,7 +94,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin, onRese
             <Building2 className="w-6 h-6" />
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-            企業公務費用登記與審批系統
+            邦捷費用登記系統
           </h1>
           <p className="text-xs text-slate-400">
             請輸入使用者帳號與密碼進行驗證登入
@@ -175,22 +174,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ users, onLogin, onRese
           </button>
         </form>
 
-        {/* 底部資安標籤與重置 */}
-        <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
+        {/* 底部資安標籤 */}
+        <div className="pt-2 border-t border-slate-800 flex items-center justify-center text-[11px] text-slate-500">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>三級身分權限控管 (RBAC)</span>
           </div>
-          {onResetUsers && (
-            <button
-              type="button"
-              onClick={onResetUsers}
-              className="text-slate-400 hover:text-indigo-300 flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>重置同仁名冊</span>
-            </button>
-          )}
         </div>
 
       </div>

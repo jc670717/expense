@@ -1,6 +1,6 @@
 {
-  "name": "企業費用報支與預算管理系統",
-  "description": "具備多角色權限管理、專案預算監控、多幣別換算、每月固定費用自動建立、發票辨識與報表匯出入的企業級費用管理系統",
+  "name": "邦捷費用登記系統",
+  "description": "邦捷費用登記系統 - 具備多角色權限管理、專案預算監控、多幣別換算、每月固定費用自動建立、發票辨識與報表匯出入",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

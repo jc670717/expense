@@ -1133,7 +1133,7 @@ export default function App() {
 
   // 若尚未登入，顯示登入畫面
   if (!isLoggedIn) {
-    return <LoginScreen users={users} onLogin={handleLogin} onResetUsers={handleResetUsers} />;
+    return <LoginScreen users={users} onLogin={handleLogin} />;
   }
 
   return (

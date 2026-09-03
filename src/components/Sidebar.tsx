@@ -197,11 +197,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-5 flex items-center justify-between border-b border-slate-800/60">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-base shadow-sm shadow-indigo-500/20">
-              E
+              B
             </div>
             <div>
               <span className="text-white font-bold text-base tracking-tight block leading-tight">
-                Expensify Pro
+                Bonjays
               </span>
               <span className="text-[10px] text-slate-400 font-medium tracking-tight">
                 邦捷費用登記系統
