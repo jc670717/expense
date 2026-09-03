@@ -469,20 +469,25 @@ export function createExpressApp() {
     }
   });
 
-  app.post('/api/expenses/batch-delete', async (req, res) => {
+  const handleBatchDelete = async (req: express.Request, res: express.Response) => {
     const pool = getDbPool();
     if (!pool) return res.status(200).json({ success: true, mode: 'local' });
 
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) return res.json({ success: true });
+    const ids = req.body?.ids || req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.json({ success: true, deletedCount: 0 });
 
     try {
-      await pool.query('DELETE FROM expenses WHERE id = ANY($1)', [ids]);
-      res.json({ success: true });
+      const result = await pool.query('DELETE FROM expenses WHERE id = ANY($1::varchar[])', [ids]);
+      res.json({ success: true, deletedCount: result.rowCount });
     } catch (err: any) {
+      console.error('Error in batch delete expenses:', err);
       res.status(500).json({ error: err.message });
     }
-  });
+  };
+
+  app.post('/api/expenses/batch-delete', handleBatchDelete);
+  app.delete('/api/expenses/batch-delete', handleBatchDelete);
+  app.delete('/api/expenses/batch', handleBatchDelete);
 
   app.patch('/api/expenses/:id/status', async (req, res) => {
     const pool = getDbPool();

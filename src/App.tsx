@@ -138,8 +138,8 @@ export default function App() {
         }
 
         if (res.dbConnected && res.data) {
-          // 若後端資料庫已有資料，則載入同步
-          if (res.data.expenses && res.data.expenses.length > 0) {
+          // 若後端資料庫連線成功，則以資料庫最新狀態同步 (包含空陣列)
+          if (Array.isArray(res.data.expenses)) {
             setExpenses(res.data.expenses);
             localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(res.data.expenses));
           }
@@ -467,7 +467,11 @@ export default function App() {
       return;
     }
 
-    setExpenses(prev => prev.filter(e => e.id !== id));
+    setExpenses(prev => {
+      const nextList = prev.filter(e => e.id !== id);
+      localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+      return nextList;
+    });
     await triggerSaveWithFeedback('正在從雲端資料庫刪除費用單據...', async () => {
       await syncDeleteExpenseRemote(id);
     });
@@ -475,10 +479,14 @@ export default function App() {
   };
 
   const handleBatchDeleteExpenses = async (ids: string[]) => {
-    if (ids.length === 0) return;
+    if (!ids || ids.length === 0) return;
     const count = ids.length;
-    setExpenses(prev => prev.filter(e => !ids.includes(e.id)));
-    await triggerSaveWithFeedback(`正在批次刪除 ${count} 筆費用單據...`, async () => {
+    setExpenses(prev => {
+      const nextList = prev.filter(e => !ids.includes(e.id));
+      localStorage.setItem('EXPENSE_APP_EXPENSES', JSON.stringify(nextList));
+      return nextList;
+    });
+    await triggerSaveWithFeedback(`正在批次自資料庫刪除 ${count} 筆費用單據...`, async () => {
       await syncBatchDeleteExpensesRemote(ids);
     });
     addAuditLog('費用登記', '批次刪除', `批次刪除 ${count} 筆費用報支單據`);
